@@ -49,3 +49,30 @@ output "ecs_task_role_arn" {
   description = "ARN of the ECS task IAM role"
   value       = module.ecs_cluster.task_role_arn
 }
+
+# SNS outputs
+output "sns_transaction_events_arn" {
+  description = "ARN of the transaction-events SNS topic"
+  value       = module.sns.transaction_events_arn
+}
+
+# SQS outputs
+output "sqs_high_priority_url" {
+  description = "URL of the high-priority SQS queue"
+  value       = module.sqs.high_priority_queue_url
+}
+
+output "sqs_high_priority_arn" {
+  description = "ARN of the high-priority SQS queue"
+  value       = module.sqs.high_priority_queue_arn
+}
+
+output "sqs_low_priority_url" {
+  description = "URL of the low-priority SQS queue"
+  value       = module.sqs.low_priority_queue_url
+}
+
+output "sqs_low_priority_arn" {
+  description = "ARN of the low-priority SQS queue"
+  value       = module.sqs.low_priority_queue_arn
+}
