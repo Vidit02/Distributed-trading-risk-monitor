@@ -76,3 +76,41 @@ output "sqs_low_priority_arn" {
   description = "ARN of the low-priority SQS queue"
   value       = module.sqs.low_priority_queue_arn
 }
+
+# DynamoDB outputs
+output "dynamodb_transactions_table_name" {
+  description = "Name of the transactions DynamoDB table"
+  value       = module.dynamodb.transactions_table_name
+}
+
+output "dynamodb_transactions_table_arn" {
+  description = "ARN of the transactions DynamoDB table"
+  value       = module.dynamodb.transactions_table_arn
+}
+
+# S3 outputs
+output "s3_audit_logs_bucket_name" {
+  description = "Name of the audit logs S3 bucket"
+  value       = module.s3.audit_logs_bucket_name
+}
+
+output "s3_audit_logs_bucket_arn" {
+  description = "ARN of the audit logs S3 bucket"
+  value       = module.s3.audit_logs_bucket_arn
+}
+
+# Redis outputs
+output "redis_primary_endpoint" {
+  description = "Primary endpoint for Redis writes"
+  value       = module.redis.redis_primary_endpoint
+}
+
+output "redis_reader_endpoint" {
+  description = "Reader endpoint for Redis reads (load-balanced across replicas)"
+  value       = module.redis.redis_reader_endpoint
+}
+
+output "redis_port" {
+  description = "Port Redis is listening on"
+  value       = module.redis.redis_port
+}
