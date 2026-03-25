@@ -39,3 +39,22 @@ module "ecs_cluster" {
   environment        = var.environment
   container_insights = var.container_insights
 }
+
+
+# SNS
+module "sns" {
+  source = "./modules/sns"
+
+  project     = var.project
+  environment = var.environment
+}
+
+
+# SQS
+module "sqs" {
+  source = "./modules/sqs"
+
+  project       = var.project
+  environment   = var.environment
+  sns_topic_arn = module.sns.transaction_events_arn
+}
