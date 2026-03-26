@@ -12,7 +12,7 @@ resource "aws_elasticache_subnet_group" "redis" {
   }
 }
 
-# Parameter group — Redis 7.x defaults tuned for low-latency risk state reads
+# Parameter group — Redis defaults tuned for low-latency risk state reads
 resource "aws_elasticache_parameter_group" "redis" {
   name   = "${local.name_prefix}-redis-params"
   family = "redis7"
