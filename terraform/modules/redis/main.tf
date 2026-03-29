@@ -1,5 +1,5 @@
 locals {
-  name_prefix = "${var.project}-${var.environment}"
+  name_prefix = var.project
 }
 
 # Subnet group — places Redis nodes in private subnets across AZs
@@ -31,7 +31,7 @@ resource "aws_elasticache_parameter_group" "redis" {
 # Replication group — primary + replica across AZs with automatic failover
 resource "aws_elasticache_replication_group" "redis" {
   replication_group_id = "${local.name_prefix}-redis"
-  description          = "Shared risk state cache for ${var.project} (${var.environment})"
+  description          = "Shared risk state cache for ${var.project}"
 
   engine               = "redis"
   engine_version       = var.redis_version

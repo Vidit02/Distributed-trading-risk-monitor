@@ -1,5 +1,5 @@
 resource "aws_dynamodb_table" "transactions" {
-  name         = "${var.project}-${var.environment}-transactions"
+  name         = "${var.project}-transactions"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "transaction_id"
   range_key    = "timestamp"
@@ -54,6 +54,6 @@ resource "aws_dynamodb_table" "transactions" {
   }
 
   tags = {
-    Name = "${var.project}-${var.environment}-transactions"
+    Name = "${var.project}-transactions"
   }
 }

@@ -3,11 +3,6 @@ variable "project" {
   type        = string
 }
 
-variable "environment" {
-  description = "Deployment environment (dev, staging, prod)"
-  type        = string
-}
-
 variable "private_subnet_ids" {
   description = "IDs of private subnets in which to place the Redis cluster"
   type        = list(string)

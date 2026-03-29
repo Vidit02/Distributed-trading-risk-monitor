@@ -1,10 +1,9 @@
 locals {
-  name_prefix = "${var.project}-${var.environment}"
+  name_prefix = var.project
 }
 
-# ---------------------------------------------------------------------------
+
 # VPC
-# ---------------------------------------------------------------------------
 resource "aws_vpc" "main" {
   cidr_block           = var.vpc_cidr
   enable_dns_support   = true
@@ -15,9 +14,7 @@ resource "aws_vpc" "main" {
   }
 }
 
-# ---------------------------------------------------------------------------
 # Subnets
-# ---------------------------------------------------------------------------
 resource "aws_subnet" "public" {
   count             = length(var.public_subnet_cidrs)
   vpc_id            = aws_vpc.main.id
@@ -44,9 +41,7 @@ resource "aws_subnet" "private" {
   }
 }
 
-# ---------------------------------------------------------------------------
 # Internet Gateway
-# ---------------------------------------------------------------------------
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
 
@@ -55,9 +50,7 @@ resource "aws_internet_gateway" "main" {
   }
 }
 
-# ---------------------------------------------------------------------------
-# NAT Gateway (one per AZ for HA)
-# ---------------------------------------------------------------------------
+# NAT Gateway
 resource "aws_eip" "nat" {
   count  = length(var.public_subnet_cidrs)
   domain = "vpc"
@@ -79,9 +72,8 @@ resource "aws_nat_gateway" "main" {
   depends_on = [aws_internet_gateway.main]
 }
 
-# ---------------------------------------------------------------------------
+
 # Route Tables
-# ---------------------------------------------------------------------------
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
@@ -121,9 +113,7 @@ resource "aws_route_table_association" "private" {
   route_table_id = aws_route_table.private[count.index].id
 }
 
-# ---------------------------------------------------------------------------
 # Security Groups
-# ---------------------------------------------------------------------------
 
 # ALB — accepts HTTP/HTTPS from the internet
 resource "aws_security_group" "alb" {

@@ -1,5 +1,5 @@
 locals {
-  name_prefix = "${var.project}-${var.environment}"
+  name_prefix = var.project
 }
 
 # Dead-Letter Queues
@@ -30,7 +30,7 @@ resource "aws_sqs_queue" "high_priority" {
 
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.high_priority_dlq.arn
-    maxReceiveCount     = var.max_receive_count
+    maxReceiveCount     = var.high_priority_max_receive_count
   })
 
   tags = {
@@ -48,7 +48,7 @@ resource "aws_sqs_queue" "low_priority" {
 
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.low_priority_dlq.arn
-    maxReceiveCount     = var.max_receive_count
+    maxReceiveCount     = var.low_priority_max_receive_count
   })
 
   tags = {
