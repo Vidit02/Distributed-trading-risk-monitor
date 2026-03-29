@@ -16,6 +16,7 @@ import (
 
 // AuditRecord is one line written to S3. It wraps the original TransactionEvent
 // and adds the time the service received it.
+type AuditRecord struct {
 	ReceivedAt      time.Time              `json:"received_at"`
 	TransactionID   string                 `json:"transaction_id"`
 	UserID          string                 `json:"user_id"`

@@ -1,5 +1,5 @@
 locals {
-  name_prefix = "${var.project}-${var.environment}"
+  name_prefix = var.project
 }
 
 data "aws_caller_identity" "current" {}

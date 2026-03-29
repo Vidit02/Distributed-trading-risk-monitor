@@ -1,17 +1,13 @@
 locals {
-  name_prefix = "${var.project}-${var.environment}"
+  name_prefix = var.project
 }
 
-# ---------------------------------------------------------------------------
-# Lookup pre-existing IAMLabRole (AWS Academy environment)
-# ---------------------------------------------------------------------------
+# Lookup pre-existing IAMLabRole
 data "aws_iam_role" "lab_role" {
   name = "LabRole"
 }
 
-# ---------------------------------------------------------------------------
 # ECS Cluster (Fargate)
-# ---------------------------------------------------------------------------
 resource "aws_ecs_cluster" "main" {
   name = "${local.name_prefix}-cluster"
 
@@ -37,9 +33,8 @@ resource "aws_ecs_cluster_capacity_providers" "main" {
   }
 }
 
-# ---------------------------------------------------------------------------
-# CloudWatch Log Group (shared by all services)
-# ---------------------------------------------------------------------------
+
+# CloudWatch Log Group 
 resource "aws_cloudwatch_log_group" "ecs" {
   name              = "/ecs/${local.name_prefix}"
   retention_in_days = 30

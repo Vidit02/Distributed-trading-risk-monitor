@@ -3,11 +3,6 @@ variable "project" {
   type        = string
 }
 
-variable "environment" {
-  description = "Deployment environment (dev, staging, prod)"
-  type        = string
-}
-
 variable "log_retention_days" {
   description = "Number of days before audit log objects are expired"
   type        = number

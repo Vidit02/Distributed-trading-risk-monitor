@@ -3,11 +3,6 @@ variable "project" {
   type        = string
 }
 
-variable "environment" {
-  description = "Deployment environment"
-  type        = string
-}
-
 variable "sns_topic_arn" {
   description = "ARN of the SNS topic to subscribe to"
   type        = string
@@ -22,7 +17,7 @@ variable "high_priority_visibility_timeout" {
 variable "low_priority_visibility_timeout" {
   description = "Visibility timeout (seconds) for the low-priority queue"
   type        = number
-  default     = 60
+  default     = 300 # 5 minutes — low priority workers can take longer
 }
 
 variable "message_retention_seconds" {
@@ -31,8 +26,14 @@ variable "message_retention_seconds" {
   default     = 86400 # 1 day
 }
 
-variable "max_receive_count" {
-  description = "Number of receives before a message is moved to the DLQ"
+variable "high_priority_max_receive_count" {
+  description = "Failed receives before a high-priority message moves to the DLQ"
   type        = number
   default     = 3
+}
+
+variable "low_priority_max_receive_count" {
+  description = "Failed receives before a low-priority message moves to the DLQ"
+  type        = number
+  default     = 5
 }

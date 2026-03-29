@@ -3,11 +3,6 @@ variable "project" {
   type        = string
 }
 
-variable "environment" {
-  description = "Deployment environment"
-  type        = string
-}
-
 variable "container_insights" {
   description = "Enable CloudWatch Container Insights"
   type        = bool

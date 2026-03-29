@@ -56,6 +56,16 @@ output "sns_transaction_events_arn" {
   value       = module.sns.transaction_events_arn
 }
 
+output "sns_fraud_alert_events_arn" {
+  description = "ARN of the fraud-alert-events SNS topic (env var FRAUD_ALERT_TOPIC_ARN)"
+  value       = module.sns.fraud_alert_events_arn
+}
+
+output "sns_risk_breach_events_arn" {
+  description = "ARN of the risk-breach-events SNS topic (env var RISK_BREACH_TOPIC_ARN)"
+  value       = module.sns.risk_breach_events_arn
+}
+
 # SQS outputs
 output "sqs_high_priority_url" {
   description = "URL of the high-priority SQS queue"
@@ -113,4 +123,26 @@ output "redis_reader_endpoint" {
 output "redis_port" {
   description = "Port Redis is listening on"
   value       = module.redis.redis_port
+}
+
+# ALB outputs
+output "alb_dns_name" {
+  description = "DNS name of the ALB — transaction service endpoint"
+  value       = module.alb.alb_dns_name
+}
+
+output "transaction_target_group_arn" {
+  description = "ARN of the transaction service target group"
+  value       = module.alb.transaction_target_group_arn
+}
+
+# ECR outputs
+output "ecr_repository_urls" {
+  description = "Map of service name to ECR repository URL"
+  value       = module.ecr.repository_urls
+}
+
+output "ecr_registry_id" {
+  description = "ECR registry ID (AWS account ID)"
+  value       = module.ecr.registry_id
 }
