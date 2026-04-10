@@ -67,7 +67,8 @@ module "dynamodb" {
 module "s3" {
   source = "./modules/s3"
 
-  project = var.project
+  project       = var.project
+  force_destroy = true
 }
 
 
