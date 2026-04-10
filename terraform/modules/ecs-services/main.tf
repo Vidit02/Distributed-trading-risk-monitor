@@ -117,6 +117,10 @@ resource "aws_ecs_service" "fraud" {
     assign_public_ip = false
   }
 
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
+
   tags = { Name = "${local.name_prefix}-fraud" }
 }
 
@@ -173,6 +177,10 @@ resource "aws_ecs_service" "risk" {
     assign_public_ip = false
   }
 
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
+
   tags = { Name = "${local.name_prefix}-risk" }
 }
 
@@ -222,6 +230,10 @@ resource "aws_ecs_service" "analytics" {
     subnets          = var.private_subnet_ids
     security_groups  = [var.ecs_security_group_id]
     assign_public_ip = false
+  }
+
+  lifecycle {
+    ignore_changes = [desired_count]
   }
 
   tags = { Name = "${local.name_prefix}-analytics" }
@@ -276,6 +288,10 @@ resource "aws_ecs_service" "audit_logging" {
     subnets          = var.private_subnet_ids
     security_groups  = [var.ecs_security_group_id]
     assign_public_ip = false
+  }
+
+  lifecycle {
+    ignore_changes = [desired_count]
   }
 
   tags = { Name = "${local.name_prefix}-audit-logging" }

@@ -98,6 +98,22 @@ module "ecr" {
   project = var.project
 }
 
+# Auto-Scaling — ECS services scaled by SQS queue depth
+module "autoscaling" {
+  source = "./modules/autoscaling"
+
+  project      = var.project
+  cluster_name = module.ecs_cluster.cluster_name
+
+  fraud_service_name         = module.ecs_services.fraud_service_name
+  risk_service_name          = module.ecs_services.risk_service_name
+  analytics_service_name     = module.ecs_services.analytics_service_name
+  audit_logging_service_name = module.ecs_services.audit_logging_service_name
+
+  high_priority_queue_arn = module.sqs.high_priority_queue_arn
+  low_priority_queue_arn  = module.sqs.low_priority_queue_arn
+}
+
 # ECS Services
 module "ecs_services" {
   source = "./modules/ecs-services"
