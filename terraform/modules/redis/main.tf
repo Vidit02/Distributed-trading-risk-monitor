@@ -48,8 +48,9 @@ resource "aws_elasticache_replication_group" "redis" {
   multi_az_enabled           = true
 
   # Security
-  at_rest_encryption_enabled = true
-  transit_encryption_enabled = true
+  at_rest_encryption_enabled  = true
+  transit_encryption_enabled  = true
+  transit_encryption_mode     = "preferred"
 
   # Snapshots — retain 1 day of backups
   snapshot_retention_limit = var.snapshot_retention_limit
