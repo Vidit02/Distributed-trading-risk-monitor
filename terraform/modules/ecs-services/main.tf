@@ -29,6 +29,7 @@ resource "aws_ecs_task_definition" "transaction" {
       environment = [
         { name = "PORT", value = "8080" },
         { name = "SNS_TOPIC_ARN", value = var.sns_transaction_events_arn },
+        { name = "DYNAMODB_TABLE_NAME", value = var.dynamodb_table_name },
         { name = "AWS_REGION", value = var.aws_region }
       ]
 
@@ -87,6 +88,7 @@ resource "aws_ecs_task_definition" "fraud" {
       environment = [
         { name = "HIGH_PRIORITY_QUEUE_URL", value = var.high_priority_queue_url },
         { name = "FRAUD_ALERT_TOPIC_ARN", value = var.sns_fraud_alert_events_arn },
+        { name = "DYNAMODB_TABLE_NAME", value = var.dynamodb_table_name },
         { name = "AWS_REGION", value = var.aws_region }
       ]
 

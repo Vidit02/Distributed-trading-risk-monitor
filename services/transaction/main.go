@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 
 	"github.com/Vidit02/Distributed-trading-risk-monitor/services/transaction/internal/handler"
@@ -20,6 +21,10 @@ func main() {
 	topicARN := os.Getenv("SNS_TOPIC_ARN")
 	if topicARN == "" {
 		log.Fatal("SNS_TOPIC_ARN environment variable is required")
+	}
+	tableName := os.Getenv("DYNAMODB_TABLE_NAME")
+	if tableName == "" {
+		log.Fatal("DYNAMODB_TABLE_NAME environment variable is required")
 	}
 
 	port := os.Getenv("PORT")
@@ -34,7 +39,8 @@ func main() {
 	}
 
 	snsClient := sns.NewFromConfig(cfg)
-	txHandler := handler.New(snsClient, topicARN)
+	dynamoClient := dynamodb.NewFromConfig(cfg)
+	txHandler := handler.New(snsClient, topicARN, dynamoClient, tableName)
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /transaction", txHandler)

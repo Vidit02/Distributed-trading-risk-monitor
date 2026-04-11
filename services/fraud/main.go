@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
@@ -27,6 +28,10 @@ func main() {
 	if fraudAlertTopicARN == "" {
 		log.Fatal("FRAUD_ALERT_TOPIC_ARN is required")
 	}
+	tableName := os.Getenv("DYNAMODB_TABLE_NAME")
+	if tableName == "" {
+		log.Fatal("DYNAMODB_TABLE_NAME is required")
+	}
 
 	awsCfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
@@ -35,8 +40,9 @@ func main() {
 
 	sqsClient := sqs.NewFromConfig(awsCfg)
 	snsClient := sns.NewFromConfig(awsCfg)
+	dynamoClient := dynamodb.NewFromConfig(awsCfg)
 
-	h := handler.New(snsClient, fraudAlertTopicARN)
+	h := handler.New(snsClient, fraudAlertTopicARN, dynamoClient, tableName)
 
 	consumer := sqsconsumer.New(sqsClient, sqsconsumer.Config{
 		QueueURL: queueURL,
