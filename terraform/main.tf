@@ -135,6 +135,9 @@ module "ecs_services" {
   high_priority_queue_url = module.sqs.high_priority_queue_url
   low_priority_queue_url  = module.sqs.low_priority_queue_url
 
+  # DynamoDB
+  dynamodb_table_name = module.dynamodb.transactions_table_name
+
   # S3
   s3_audit_logs_bucket_name = module.s3.audit_logs_bucket_name
 

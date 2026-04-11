@@ -104,6 +104,12 @@ variable "low_priority_queue_url" {
   type        = string
 }
 
+# DynamoDB
+variable "dynamodb_table_name" {
+  description = "Name of the transactions DynamoDB table"
+  type        = string
+}
+
 # S3
 variable "s3_audit_logs_bucket_name" {
   description = "Name of the audit logs S3 bucket"

@@ -2,11 +2,15 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/Vidit02/Distributed-trading-risk-monitor/shared/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	dynamodbTypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	snsTypes "github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/google/uuid"
@@ -33,12 +37,19 @@ type TransactionResponse struct {
 
 // Handler handles POST /transaction requests.
 type Handler struct {
-	sns      *sns.Client
-	topicARN string
+	sns       *sns.Client
+	topicARN  string
+	dynamo    *dynamodb.Client
+	tableName string
 }
 
-func New(snsClient *sns.Client, topicARN string) *Handler {
-	return &Handler{sns: snsClient, topicARN: topicARN}
+func New(snsClient *sns.Client, topicARN string, dynamoClient *dynamodb.Client, tableName string) *Handler {
+	return &Handler{
+		sns:       snsClient,
+		topicARN:  topicARN,
+		dynamo:    dynamoClient,
+		tableName: tableName,
+	}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -85,6 +96,32 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Metadata:        req.Metadata,
 	}
 
+	// Persist to DynamoDB before publishing to SNS.
+	ttl := now.Add(90 * 24 * time.Hour).Unix()
+	item := map[string]dynamodbTypes.AttributeValue{
+		"transaction_id":   &dynamodbTypes.AttributeValueMemberS{Value: event.TransactionID},
+		"timestamp":        &dynamodbTypes.AttributeValueMemberS{Value: event.Timestamp.Format(time.RFC3339Nano)},
+		"user_id":          &dynamodbTypes.AttributeValueMemberS{Value: event.UserID},
+		"amount":           &dynamodbTypes.AttributeValueMemberN{Value: fmt.Sprintf("%.2f", event.Amount)},
+		"currency":         &dynamodbTypes.AttributeValueMemberS{Value: event.Currency},
+		"transaction_type": &dynamodbTypes.AttributeValueMemberS{Value: string(event.TransactionType)},
+		"priority":         &dynamodbTypes.AttributeValueMemberS{Value: string(event.Priority)},
+		"status":           &dynamodbTypes.AttributeValueMemberS{Value: "pending"},
+		"ttl":              &dynamodbTypes.AttributeValueMemberN{Value: fmt.Sprintf("%d", ttl)},
+	}
+	if event.MerchantID != "" {
+		item["merchant_id"] = &dynamodbTypes.AttributeValueMemberS{Value: event.MerchantID}
+	}
+
+	if _, err := h.dynamo.PutItem(r.Context(), &dynamodb.PutItemInput{
+		TableName: aws.String(h.tableName),
+		Item:      item,
+	}); err != nil {
+		log.Printf("transaction: DynamoDB PutItem failed: %v", err)
+		http.Error(w, "failed to save transaction", http.StatusInternalServerError)
+		return
+	}
+
 	payload, err := json.Marshal(event)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -106,6 +143,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("transaction: saved %s (user=%s amount=%.2f %s priority=%s status=pending)",
+		event.TransactionID, event.UserID, event.Amount, event.Currency, event.Priority)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(TransactionResponse{
@@ -116,7 +156,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // derivePriority maps amount thresholds to priority levels.
-// Thresholds mirror the fraud detection patterns defined in the fraud service.
 func derivePriority(amount float64) events.Priority {
 	switch {
 	case amount >= 50000:
