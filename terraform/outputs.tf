@@ -157,6 +157,17 @@ output "autoscaling_low_priority_scale_in_policy_arns" {
   value       = module.autoscaling.low_priority_scale_in_policy_arns
 }
 
+# CloudWatch Dashboard outputs
+output "cloudwatch_dashboard_name" {
+  description = "Name of the CloudWatch dashboard"
+  value       = module.cloudwatch_dashboard.dashboard_name
+}
+
+output "cloudwatch_dashboard_url" {
+  description = "Direct URL to the CloudWatch dashboard in the AWS console"
+  value       = module.cloudwatch_dashboard.dashboard_url
+}
+
 # ECR outputs
 output "ecr_repository_urls" {
   description = "Map of service name to ECR repository URL"
