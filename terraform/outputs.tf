@@ -136,6 +136,27 @@ output "transaction_target_group_arn" {
   value       = module.alb.transaction_target_group_arn
 }
 
+# Auto-scaling outputs
+output "autoscaling_high_priority_scale_out_policy_arns" {
+  description = "Scale-out policy ARNs for high-priority queue consumers (fraud, risk)"
+  value       = module.autoscaling.high_priority_scale_out_policy_arns
+}
+
+output "autoscaling_high_priority_scale_in_policy_arns" {
+  description = "Scale-in policy ARNs for high-priority queue consumers (fraud, risk)"
+  value       = module.autoscaling.high_priority_scale_in_policy_arns
+}
+
+output "autoscaling_low_priority_scale_out_policy_arns" {
+  description = "Scale-out policy ARNs for low-priority queue consumers (analytics, audit-logging)"
+  value       = module.autoscaling.low_priority_scale_out_policy_arns
+}
+
+output "autoscaling_low_priority_scale_in_policy_arns" {
+  description = "Scale-in policy ARNs for low-priority queue consumers (analytics, audit-logging)"
+  value       = module.autoscaling.low_priority_scale_in_policy_arns
+}
+
 # ECR outputs
 output "ecr_repository_urls" {
   description = "Map of service name to ECR repository URL"
