@@ -77,6 +77,21 @@ variable "ecr_audit_logging_image" {
   type        = string
 }
 
+variable "ecr_compliance_image" {
+  description = "ECR image URI for the compliance service"
+  type        = string
+}
+
+variable "ecr_alert_image" {
+  description = "ECR image URI for the alert service"
+  type        = string
+}
+
+variable "ecr_manual_review_image" {
+  description = "ECR image URI for the manual-review service"
+  type        = string
+}
+
 # SNS
 variable "sns_transaction_events_arn" {
   description = "ARN of transaction-events SNS topic"
@@ -93,6 +108,11 @@ variable "sns_risk_breach_events_arn" {
   type        = string
 }
 
+variable "sns_compliance_events_arn" {
+  description = "ARN of compliance-events SNS topic"
+  type        = string
+}
+
 # SQS
 variable "high_priority_queue_url" {
   description = "URL of high-priority SQS queue"
@@ -101,6 +121,16 @@ variable "high_priority_queue_url" {
 
 variable "low_priority_queue_url" {
   description = "URL of low-priority SQS queue"
+  type        = string
+}
+
+variable "alert_queue_url" {
+  description = "URL of the alert SQS queue (receives fraud-alert + risk-breach events)"
+  type        = string
+}
+
+variable "high_priority_dlq_url" {
+  description = "URL of the high-priority dead-letter queue (consumed by manual-review)"
   type        = string
 }
 

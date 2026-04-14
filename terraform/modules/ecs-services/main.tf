@@ -298,3 +298,179 @@ resource "aws_ecs_service" "audit_logging" {
 
   tags = { Name = "${local.name_prefix}-audit-logging" }
 }
+
+# ---------------------------------------------------------------------------
+# Compliance Service — SQS consumer on high-priority queue
+# ---------------------------------------------------------------------------
+resource "aws_ecs_task_definition" "compliance" {
+  family                   = "${local.name_prefix}-compliance"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = 256
+  memory                   = 512
+  execution_role_arn       = var.task_execution_role_arn
+  task_role_arn            = var.task_role_arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "compliance"
+      image     = var.ecr_compliance_image
+      essential = true
+
+      environment = [
+        { name = "HIGH_PRIORITY_QUEUE_URL", value = var.high_priority_queue_url },
+        { name = "COMPLIANCE_TOPIC_ARN", value = var.sns_compliance_events_arn },
+        { name = "AWS_REGION", value = var.aws_region }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = var.log_group_name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "compliance"
+        }
+      }
+    }
+  ])
+
+  tags = { Name = "${local.name_prefix}-compliance" }
+}
+
+resource "aws_ecs_service" "compliance" {
+  name            = "${local.name_prefix}-compliance"
+  cluster         = var.cluster_id
+  task_definition = aws_ecs_task_definition.compliance.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = var.private_subnet_ids
+    security_groups  = [var.ecs_security_group_id]
+    assign_public_ip = false
+  }
+
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
+
+  tags = { Name = "${local.name_prefix}-compliance" }
+}
+
+# ---------------------------------------------------------------------------
+# Alert Service — SQS consumer on dedicated alert queue
+# (subscribed to fraud-alert-events and risk-breach-events SNS topics)
+# ---------------------------------------------------------------------------
+resource "aws_ecs_task_definition" "alert" {
+  family                   = "${local.name_prefix}-alert"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = 256
+  memory                   = 512
+  execution_role_arn       = var.task_execution_role_arn
+  task_role_arn            = var.task_role_arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "alert"
+      image     = var.ecr_alert_image
+      essential = true
+
+      environment = [
+        { name = "ALERT_QUEUE_URL", value = var.alert_queue_url },
+        { name = "AWS_REGION", value = var.aws_region }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = var.log_group_name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "alert"
+        }
+      }
+    }
+  ])
+
+  tags = { Name = "${local.name_prefix}-alert" }
+}
+
+resource "aws_ecs_service" "alert" {
+  name            = "${local.name_prefix}-alert"
+  cluster         = var.cluster_id
+  task_definition = aws_ecs_task_definition.alert.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = var.private_subnet_ids
+    security_groups  = [var.ecs_security_group_id]
+    assign_public_ip = false
+  }
+
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
+
+  tags = { Name = "${local.name_prefix}-alert" }
+}
+
+# ---------------------------------------------------------------------------
+# Manual Review Service — SQS consumer on the high-priority DLQ
+# (fallback when fraud detection is down)
+# ---------------------------------------------------------------------------
+resource "aws_ecs_task_definition" "manual_review" {
+  family                   = "${local.name_prefix}-manual-review"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = 256
+  memory                   = 512
+  execution_role_arn       = var.task_execution_role_arn
+  task_role_arn            = var.task_role_arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "manual-review"
+      image     = var.ecr_manual_review_image
+      essential = true
+
+      environment = [
+        { name = "DLQ_QUEUE_URL", value = var.high_priority_dlq_url },
+        { name = "DYNAMODB_TABLE_NAME", value = var.dynamodb_table_name },
+        { name = "ALERT_TOPIC_ARN", value = var.sns_fraud_alert_events_arn },
+        { name = "AWS_REGION", value = var.aws_region }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = var.log_group_name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "manual-review"
+        }
+      }
+    }
+  ])
+
+  tags = { Name = "${local.name_prefix}-manual-review" }
+}
+
+resource "aws_ecs_service" "manual_review" {
+  name            = "${local.name_prefix}-manual-review"
+  cluster         = var.cluster_id
+  task_definition = aws_ecs_task_definition.manual_review.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = var.private_subnet_ids
+    security_groups  = [var.ecs_security_group_id]
+    assign_public_ip = false
+  }
+
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
+
+  tags = { Name = "${local.name_prefix}-manual-review" }
+}

@@ -17,3 +17,8 @@ output "risk_breach_events_arn" {
   description = "ARN of the risk-breach-events SNS topic"
   value       = aws_sns_topic.risk_breach_events.arn
 }
+
+output "compliance_events_arn" {
+  description = "ARN of the compliance-events SNS topic"
+  value       = aws_sns_topic.compliance_events.arn
+}

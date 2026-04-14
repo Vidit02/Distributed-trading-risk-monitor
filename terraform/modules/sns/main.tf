@@ -33,3 +33,12 @@ resource "aws_sns_topic" "risk_breach_events" {
     Name = "${local.name_prefix}-risk-breach-events"
   }
 }
+
+# compliance-events — published by the Compliance Service
+resource "aws_sns_topic" "compliance_events" {
+  name = "${local.name_prefix}-compliance-events"
+
+  tags = {
+    Name = "${local.name_prefix}-compliance-events"
+  }
+}
