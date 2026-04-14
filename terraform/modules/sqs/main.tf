@@ -196,3 +196,67 @@ resource "aws_sns_topic_subscription" "low_priority" {
 
   depends_on = [aws_sqs_queue_policy.low_priority]
 }
+
+
+# ---------------------------------------------------------------------------
+# Alert Queue — receives fraud-alert-events and risk-breach-events
+# Consumed by the Alert Service
+# ---------------------------------------------------------------------------
+resource "aws_sqs_queue" "alert_dlq" {
+  name                      = "${local.name_prefix}-alert-dlq"
+  message_retention_seconds = 1209600 # 14 days
+
+  tags = { Name = "${local.name_prefix}-alert-dlq" }
+}
+
+resource "aws_sqs_queue" "alert" {
+  name                       = "${local.name_prefix}-alert"
+  visibility_timeout_seconds = 30
+  message_retention_seconds  = var.message_retention_seconds
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.alert_dlq.arn
+    maxReceiveCount     = 3
+  })
+
+  tags = { Name = "${local.name_prefix}-alert" }
+}
+
+data "aws_iam_policy_document" "alert_policy" {
+  statement {
+    sid    = "AllowSNSPublish"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["sns.amazonaws.com"]
+    }
+    actions   = ["sqs:SendMessage"]
+    resources = [aws_sqs_queue.alert.arn]
+    condition {
+      test     = "ArnEquals"
+      variable = "aws:SourceArn"
+      values   = [var.fraud_alert_topic_arn, var.risk_breach_topic_arn]
+    }
+  }
+}
+
+resource "aws_sqs_queue_policy" "alert" {
+  queue_url = aws_sqs_queue.alert.id
+  policy    = data.aws_iam_policy_document.alert_policy.json
+}
+
+resource "aws_sns_topic_subscription" "alert_fraud" {
+  topic_arn = var.fraud_alert_topic_arn
+  protocol  = "sqs"
+  endpoint  = aws_sqs_queue.alert.arn
+
+  depends_on = [aws_sqs_queue_policy.alert]
+}
+
+resource "aws_sns_topic_subscription" "alert_risk_breach" {
+  topic_arn = var.risk_breach_topic_arn
+  protocol  = "sqs"
+  endpoint  = aws_sqs_queue.alert.arn
+
+  depends_on = [aws_sqs_queue_policy.alert]
+}
