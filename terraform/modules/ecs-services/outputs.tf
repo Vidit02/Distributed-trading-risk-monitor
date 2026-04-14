@@ -22,3 +22,18 @@ output "audit_logging_service_name" {
   description = "ECS service name for audit-logging"
   value       = aws_ecs_service.audit_logging.name
 }
+
+output "compliance_service_name" {
+  description = "ECS service name for compliance"
+  value       = aws_ecs_service.compliance.name
+}
+
+output "alert_service_name" {
+  description = "ECS service name for alert"
+  value       = aws_ecs_service.alert.name
+}
+
+output "manual_review_service_name" {
+  description = "ECS service name for manual-review"
+  value       = aws_ecs_service.manual_review.name
+}

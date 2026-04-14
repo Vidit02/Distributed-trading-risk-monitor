@@ -4,10 +4,10 @@ locals {
   alb_suffix = regex("loadbalancer/(.*)", var.alb_arn)[0]
 
   # These match the queue names created in the sqs module
-  high_priority_queue_name     = "${var.project}-high-priority"
-  low_priority_queue_name      = "${var.project}-low-priority"
-  high_priority_dlq_name       = "${var.project}-high-priority-dlq"
-  low_priority_dlq_name        = "${var.project}-low-priority-dlq"
+  high_priority_queue_name = "${var.project}-high-priority"
+  low_priority_queue_name  = "${var.project}-low-priority"
+  high_priority_dlq_name   = "${var.project}-high-priority-dlq"
+  low_priority_dlq_name    = "${var.project}-low-priority-dlq"
 }
 
 resource "aws_cloudwatch_dashboard" "main" {
@@ -44,10 +44,10 @@ resource "aws_cloudwatch_dashboard" "main" {
           metrics = [
             ["AWS/SQS", "ApproximateNumberOfMessagesVisible",
               "QueueName", local.high_priority_queue_name,
-              { label = "High Priority", color = "#d13212" }],
+            { label = "High Priority", color = "#d13212" }],
             ["AWS/SQS", "ApproximateNumberOfMessagesVisible",
               "QueueName", local.low_priority_queue_name,
-              { label = "Low Priority", color = "#1f77b4" }]
+            { label = "Low Priority", color = "#1f77b4" }]
           ]
           yAxis = { left = { min = 0, label = "Messages" } }
         }
@@ -68,10 +68,10 @@ resource "aws_cloudwatch_dashboard" "main" {
           metrics = [
             ["AWS/SQS", "ApproximateNumberOfMessagesVisible",
               "QueueName", local.high_priority_dlq_name,
-              { label = "High Priority DLQ", color = "#d13212" }],
+            { label = "High Priority DLQ", color = "#d13212" }],
             ["AWS/SQS", "ApproximateNumberOfMessagesVisible",
               "QueueName", local.low_priority_dlq_name,
-              { label = "Low Priority DLQ", color = "#ff7f0e" }]
+            { label = "Low Priority DLQ", color = "#ff7f0e" }]
           ]
           yAxis = { left = { min = 0, label = "Messages" } }
         }
@@ -105,10 +105,10 @@ resource "aws_cloudwatch_dashboard" "main" {
           metrics = [
             ["AWS/SQS", "ApproximateAgeOfOldestMessage",
               "QueueName", local.high_priority_queue_name,
-              { label = "High Priority", color = "#d13212" }],
+            { label = "High Priority", color = "#d13212" }],
             ["AWS/SQS", "ApproximateAgeOfOldestMessage",
               "QueueName", local.low_priority_queue_name,
-              { label = "Low Priority", color = "#1f77b4" }]
+            { label = "Low Priority", color = "#1f77b4" }]
           ]
           yAxis = { left = { min = 0, label = "Seconds" } }
         }
@@ -128,13 +128,13 @@ resource "aws_cloudwatch_dashboard" "main" {
           metrics = [
             ["AWS/ApplicationELB", "TargetResponseTime",
               "LoadBalancer", local.alb_suffix,
-              { stat = "p50", label = "p50", color = "#2ca02c" }],
+            { stat = "p50", label = "p50", color = "#2ca02c" }],
             ["AWS/ApplicationELB", "TargetResponseTime",
               "LoadBalancer", local.alb_suffix,
-              { stat = "p95", label = "p95", color = "#ff7f0e" }],
+            { stat = "p95", label = "p95", color = "#ff7f0e" }],
             ["AWS/ApplicationELB", "TargetResponseTime",
               "LoadBalancer", local.alb_suffix,
-              { stat = "p99", label = "p99", color = "#d13212" }]
+            { stat = "p99", label = "p99", color = "#d13212" }]
           ]
           yAxis = { left = { min = 0, label = "Seconds" } }
         }
@@ -168,13 +168,13 @@ resource "aws_cloudwatch_dashboard" "main" {
           metrics = [
             ["AWS/ApplicationELB", "HTTPCode_Target_4XX_Count",
               "LoadBalancer", local.alb_suffix,
-              { label = "4xx (Client Errors)", color = "#ff7f0e" }],
+            { label = "4xx (Client Errors)", color = "#ff7f0e" }],
             ["AWS/ApplicationELB", "HTTPCode_Target_5XX_Count",
               "LoadBalancer", local.alb_suffix,
-              { label = "5xx (Server Errors)", color = "#d13212" }],
+            { label = "5xx (Server Errors)", color = "#d13212" }],
             ["AWS/ApplicationELB", "HTTPCode_ELB_5XX_Count",
               "LoadBalancer", local.alb_suffix,
-              { label = "5xx (ALB Errors)", color = "#9467bd" }]
+            { label = "5xx (ALB Errors)", color = "#9467bd" }]
           ]
           yAxis = { left = { min = 0, label = "Count" } }
         }
@@ -195,10 +195,10 @@ resource "aws_cloudwatch_dashboard" "main" {
           metrics = [
             ["AWS/SQS", "NumberOfMessagesSent",
               "QueueName", local.high_priority_dlq_name,
-              { label = "Sent to High DLQ", color = "#d13212" }],
+            { label = "Sent to High DLQ", color = "#d13212" }],
             ["AWS/SQS", "NumberOfMessagesSent",
               "QueueName", local.low_priority_dlq_name,
-              { label = "Sent to Low DLQ", color = "#ff7f0e" }]
+            { label = "Sent to Low DLQ", color = "#ff7f0e" }]
           ]
           yAxis = { left = { min = 0, label = "Messages" } }
         }
@@ -233,23 +233,23 @@ resource "aws_cloudwatch_dashboard" "main" {
             ["ECS/ContainerInsights", "RunningTaskCount",
               "ClusterName", var.cluster_name,
               "ServiceName", var.transaction_service_name,
-              { label = "transaction" }],
+            { label = "transaction" }],
             ["ECS/ContainerInsights", "RunningTaskCount",
               "ClusterName", var.cluster_name,
               "ServiceName", var.fraud_service_name,
-              { label = "fraud" }],
+            { label = "fraud" }],
             ["ECS/ContainerInsights", "RunningTaskCount",
               "ClusterName", var.cluster_name,
               "ServiceName", var.risk_service_name,
-              { label = "risk" }],
+            { label = "risk" }],
             ["ECS/ContainerInsights", "RunningTaskCount",
               "ClusterName", var.cluster_name,
               "ServiceName", var.analytics_service_name,
-              { label = "analytics" }],
+            { label = "analytics" }],
             ["ECS/ContainerInsights", "RunningTaskCount",
               "ClusterName", var.cluster_name,
               "ServiceName", var.audit_logging_service_name,
-              { label = "audit-logging" }]
+            { label = "audit-logging" }]
           ]
           yAxis = { left = { min = 0, label = "Tasks" } }
         }
@@ -283,10 +283,10 @@ resource "aws_cloudwatch_dashboard" "main" {
           metrics = [
             ["AWS/SQS", "NumberOfMessagesSent",
               "QueueName", local.high_priority_queue_name,
-              { label = "High Priority", color = "#d13212" }],
+            { label = "High Priority", color = "#d13212" }],
             ["AWS/SQS", "NumberOfMessagesSent",
               "QueueName", local.low_priority_queue_name,
-              { label = "Low Priority", color = "#1f77b4" }]
+            { label = "Low Priority", color = "#1f77b4" }]
           ]
           yAxis = { left = { min = 0, label = "Messages" } }
         }
@@ -307,10 +307,10 @@ resource "aws_cloudwatch_dashboard" "main" {
           metrics = [
             ["AWS/SQS", "NumberOfMessagesDeleted",
               "QueueName", local.high_priority_queue_name,
-              { label = "High Priority", color = "#2ca02c" }],
+            { label = "High Priority", color = "#2ca02c" }],
             ["AWS/SQS", "NumberOfMessagesDeleted",
               "QueueName", local.low_priority_queue_name,
-              { label = "Low Priority", color = "#17becf" }]
+            { label = "Low Priority", color = "#17becf" }]
           ]
           yAxis = { left = { min = 0, label = "Messages" } }
         }

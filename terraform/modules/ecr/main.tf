@@ -1,7 +1,7 @@
 locals {
   name_prefix = var.project
 
-  services = ["transaction", "fraud", "risk", "analytics", "audit-logging"]
+  services = ["transaction", "fraud", "risk", "analytics", "audit-logging", "compliance", "alert", "manual-review"]
 }
 
 resource "aws_ecr_repository" "services" {

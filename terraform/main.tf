@@ -52,6 +52,9 @@ module "sqs" {
 
   project       = var.project
   sns_topic_arn = module.sns.transaction_events_arn
+
+  fraud_alert_topic_arn = module.sns.fraud_alert_events_arn
+  risk_breach_topic_arn = module.sns.risk_breach_events_arn
 }
 
 
@@ -158,15 +161,21 @@ module "ecs_services" {
   ecr_risk_image          = "${module.ecr.repository_urls["risk"]}:latest"
   ecr_analytics_image     = "${module.ecr.repository_urls["analytics"]}:latest"
   ecr_audit_logging_image = "${module.ecr.repository_urls["audit-logging"]}:latest"
+  ecr_compliance_image    = "${module.ecr.repository_urls["compliance"]}:latest"
+  ecr_alert_image         = "${module.ecr.repository_urls["alert"]}:latest"
+  ecr_manual_review_image = "${module.ecr.repository_urls["manual-review"]}:latest"
 
   # SNS
   sns_transaction_events_arn = module.sns.transaction_events_arn
   sns_fraud_alert_events_arn = module.sns.fraud_alert_events_arn
   sns_risk_breach_events_arn = module.sns.risk_breach_events_arn
+  sns_compliance_events_arn  = module.sns.compliance_events_arn
 
   # SQS
   high_priority_queue_url = module.sqs.high_priority_queue_url
   low_priority_queue_url  = module.sqs.low_priority_queue_url
+  alert_queue_url         = module.sqs.alert_queue_url
+  high_priority_dlq_url   = module.sqs.high_priority_dlq_url
 
   # DynamoDB
   dynamodb_table_name = module.dynamodb.transactions_table_name
