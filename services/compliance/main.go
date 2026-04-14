@@ -23,8 +23,6 @@ func main() {
 	queueURL := requireEnv("HIGH_PRIORITY_QUEUE_URL")
 	complianceTopicARN := requireEnv("COMPLIANCE_TOPIC_ARN")
 
-	// Comma-separated lists of blocked user/merchant IDs loaded at startup.
-	// Example: BLOCKED_USERS=user-123,user-456
 	blockedUsers := splitCSV(os.Getenv("BLOCKED_USERS"))
 	blockedMerchants := splitCSV(os.Getenv("BLOCKED_MERCHANTS"))
 
