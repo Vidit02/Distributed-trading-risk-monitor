@@ -6,10 +6,13 @@ locals {
   # Queue name is just the last segment of the ARN
   high_priority_queue_name = element(split(":", var.high_priority_queue_arn), 5)
   low_priority_queue_name  = element(split(":", var.low_priority_queue_arn), 5)
+  alert_queue_name         = element(split(":", var.alert_queue_arn), 5)
+  high_priority_dlq_name   = element(split(":", var.high_priority_dlq_arn), 5)
 
   high_priority_services = {
-    fraud = var.fraud_service_name
-    risk  = var.risk_service_name
+    fraud      = var.fraud_service_name
+    risk       = var.risk_service_name
+    compliance = var.compliance_service_name
   }
 
   low_priority_services = {
@@ -237,4 +240,195 @@ resource "aws_cloudwatch_metric_alarm" "low_priority_scale_in" {
   }
 
   alarm_actions = [aws_appautoscaling_policy.low_priority_scale_in[each.key].arn]
+}
+
+# ---------------------------------------------------------------------------
+# Alert service — scales on its own dedicated alert queue depth
+# ---------------------------------------------------------------------------
+
+resource "aws_appautoscaling_target" "alert" {
+  max_capacity       = var.alert_max_capacity
+  min_capacity       = var.alert_min_capacity
+  resource_id        = "service/${var.cluster_name}/${var.alert_service_name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+resource "aws_appautoscaling_policy" "alert_scale_out" {
+  name               = "${var.alert_service_name}-scale-out"
+  policy_type        = "StepScaling"
+  resource_id        = aws_appautoscaling_target.alert.resource_id
+  scalable_dimension = aws_appautoscaling_target.alert.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.alert.service_namespace
+
+  step_scaling_policy_configuration {
+    adjustment_type         = "ChangeInCapacity"
+    cooldown                = 60
+    metric_aggregation_type = "Maximum"
+
+    step_adjustment {
+      metric_interval_lower_bound = 0
+      metric_interval_upper_bound = 15
+      scaling_adjustment          = 1
+    }
+
+    step_adjustment {
+      metric_interval_lower_bound = 15
+      scaling_adjustment          = 2
+    }
+  }
+}
+
+resource "aws_appautoscaling_policy" "alert_scale_in" {
+  name               = "${var.alert_service_name}-scale-in"
+  policy_type        = "StepScaling"
+  resource_id        = aws_appautoscaling_target.alert.resource_id
+  scalable_dimension = aws_appautoscaling_target.alert.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.alert.service_namespace
+
+  step_scaling_policy_configuration {
+    adjustment_type         = "ChangeInCapacity"
+    cooldown                = 120
+    metric_aggregation_type = "Maximum"
+
+    step_adjustment {
+      metric_interval_upper_bound = 0
+      scaling_adjustment          = -1
+    }
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "alert_scale_out" {
+  alarm_name          = "${var.alert_service_name}-queue-depth-scale-out"
+  alarm_description   = "Scale out ${var.alert_service_name}: alert queue depth >= ${var.alert_scale_out_threshold}"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 60
+  statistic           = "Maximum"
+  threshold           = var.alert_scale_out_threshold
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    QueueName = local.alert_queue_name
+  }
+
+  alarm_actions = [aws_appautoscaling_policy.alert_scale_out.arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "alert_scale_in" {
+  alarm_name          = "${var.alert_service_name}-queue-depth-scale-in"
+  alarm_description   = "Scale in ${var.alert_service_name}: alert queue depth < ${var.alert_scale_in_threshold}"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 3
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 60
+  statistic           = "Maximum"
+  threshold           = var.alert_scale_in_threshold
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    QueueName = local.alert_queue_name
+  }
+
+  alarm_actions = [aws_appautoscaling_policy.alert_scale_in.arn]
+}
+
+# ---------------------------------------------------------------------------
+# Manual-review service — scales on the high-priority DLQ depth.
+# Any message landing in the DLQ means a transaction failed processing and
+# needs human attention, so we scale out immediately at threshold = 1.
+# min_capacity = 0 so the service stays at zero cost when the DLQ is empty.
+# ---------------------------------------------------------------------------
+
+resource "aws_appautoscaling_target" "manual_review" {
+  max_capacity       = var.manual_review_max_capacity
+  min_capacity       = var.manual_review_min_capacity
+  resource_id        = "service/${var.cluster_name}/${var.manual_review_service_name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+resource "aws_appautoscaling_policy" "manual_review_scale_out" {
+  name               = "${var.manual_review_service_name}-scale-out"
+  policy_type        = "StepScaling"
+  resource_id        = aws_appautoscaling_target.manual_review.resource_id
+  scalable_dimension = aws_appautoscaling_target.manual_review.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.manual_review.service_namespace
+
+  step_scaling_policy_configuration {
+    adjustment_type         = "ChangeInCapacity"
+    cooldown                = 60
+    metric_aggregation_type = "Maximum"
+
+    step_adjustment {
+      metric_interval_lower_bound = 0
+      metric_interval_upper_bound = 9
+      scaling_adjustment          = 1
+    }
+
+    step_adjustment {
+      metric_interval_lower_bound = 9
+      scaling_adjustment          = 2
+    }
+  }
+}
+
+resource "aws_appautoscaling_policy" "manual_review_scale_in" {
+  name               = "${var.manual_review_service_name}-scale-in"
+  policy_type        = "StepScaling"
+  resource_id        = aws_appautoscaling_target.manual_review.resource_id
+  scalable_dimension = aws_appautoscaling_target.manual_review.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.manual_review.service_namespace
+
+  step_scaling_policy_configuration {
+    adjustment_type         = "ChangeInCapacity"
+    cooldown                = 300
+    metric_aggregation_type = "Maximum"
+
+    step_adjustment {
+      metric_interval_upper_bound = 0
+      scaling_adjustment          = -1
+    }
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "manual_review_scale_out" {
+  alarm_name          = "${var.manual_review_service_name}-dlq-depth-scale-out"
+  alarm_description   = "Scale out ${var.manual_review_service_name}: high-priority DLQ depth >= ${var.manual_review_scale_out_threshold}"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 60
+  statistic           = "Maximum"
+  threshold           = var.manual_review_scale_out_threshold
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    QueueName = local.high_priority_dlq_name
+  }
+
+  alarm_actions = [aws_appautoscaling_policy.manual_review_scale_out.arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "manual_review_scale_in" {
+  alarm_name          = "${var.manual_review_service_name}-dlq-depth-scale-in"
+  alarm_description   = "Scale in ${var.manual_review_service_name}: high-priority DLQ depth < ${var.manual_review_scale_in_threshold}"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 5
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 60
+  statistic           = "Maximum"
+  threshold           = var.manual_review_scale_in_threshold
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    QueueName = local.high_priority_dlq_name
+  }
+
+  alarm_actions = [aws_appautoscaling_policy.manual_review_scale_in.arn]
 }
