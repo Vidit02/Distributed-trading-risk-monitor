@@ -25,3 +25,23 @@ output "low_priority_scale_in_policy_arns" {
     for k, v in aws_appautoscaling_policy.low_priority_scale_in : k => v.arn
   }
 }
+
+output "alert_scale_out_policy_arn" {
+  description = "ARN of the scale-out policy for the alert service"
+  value       = aws_appautoscaling_policy.alert_scale_out.arn
+}
+
+output "alert_scale_in_policy_arn" {
+  description = "ARN of the scale-in policy for the alert service"
+  value       = aws_appautoscaling_policy.alert_scale_in.arn
+}
+
+output "manual_review_scale_out_policy_arn" {
+  description = "ARN of the scale-out policy for the manual-review service"
+  value       = aws_appautoscaling_policy.manual_review_scale_out.arn
+}
+
+output "manual_review_scale_in_policy_arn" {
+  description = "ARN of the scale-in policy for the manual-review service"
+  value       = aws_appautoscaling_policy.manual_review_scale_in.arn
+}

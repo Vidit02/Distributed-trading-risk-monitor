@@ -105,6 +105,68 @@ resource "aws_sqs_queue_policy" "low_priority" {
 }
 
 
+# Alert Queue — receives fraud alerts and risk breaches from their respective SNS topics
+resource "aws_sqs_queue" "alert_dlq" {
+  name                      = "${local.name_prefix}-alert-dlq"
+  message_retention_seconds = 1209600 # 14 days
+
+  tags = {
+    Name = "${local.name_prefix}-alert-dlq"
+  }
+}
+
+resource "aws_sqs_queue" "alert" {
+  name                       = "${local.name_prefix}-alert"
+  visibility_timeout_seconds = 60
+  message_retention_seconds  = var.message_retention_seconds
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.alert_dlq.arn
+    maxReceiveCount     = 3
+  })
+
+  tags = {
+    Name = "${local.name_prefix}-alert"
+  }
+}
+
+data "aws_iam_policy_document" "alert_policy" {
+  statement {
+    sid    = "AllowFraudAlertSNS"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["sns.amazonaws.com"]
+    }
+    actions   = ["sqs:SendMessage"]
+    resources = [aws_sqs_queue.alert.arn]
+    condition {
+      test     = "ArnEquals"
+      variable = "aws:SourceArn"
+      values   = [var.sns_fraud_alert_arn, var.sns_risk_breach_arn]
+    }
+  }
+}
+
+resource "aws_sqs_queue_policy" "alert" {
+  queue_url = aws_sqs_queue.alert.id
+  policy    = data.aws_iam_policy_document.alert_policy.json
+}
+
+resource "aws_sns_topic_subscription" "fraud_alert_to_alert_queue" {
+  topic_arn  = var.sns_fraud_alert_arn
+  protocol   = "sqs"
+  endpoint   = aws_sqs_queue.alert.arn
+  depends_on = [aws_sqs_queue_policy.alert]
+}
+
+resource "aws_sns_topic_subscription" "risk_breach_to_alert_queue" {
+  topic_arn  = var.sns_risk_breach_arn
+  protocol   = "sqs"
+  endpoint   = aws_sqs_queue.alert.arn
+  depends_on = [aws_sqs_queue_policy.alert]
+}
+
 # SNS → SQS Subscriptions with Filter Policies
 #
 # Filter key: `priority` (SNS message attribute, type String)

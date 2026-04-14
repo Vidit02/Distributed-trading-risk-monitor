@@ -26,6 +26,16 @@ variable "message_retention_seconds" {
   default     = 86400 # 1 day
 }
 
+variable "sns_fraud_alert_arn" {
+  description = "ARN of the fraud-alert-events SNS topic (subscribed by the alert queue)"
+  type        = string
+}
+
+variable "sns_risk_breach_arn" {
+  description = "ARN of the risk-breach-events SNS topic (subscribed by the alert queue)"
+  type        = string
+}
+
 variable "high_priority_max_receive_count" {
   description = "Failed receives before a high-priority message moves to the DLQ"
   type        = number
