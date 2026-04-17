@@ -18,22 +18,65 @@ import (
 
 const dailyKeyTTL = 24 * time.Hour
 
+// SyncMode controls how the risk service writes to Redis across regions.
+//   single     — write only to the primary Redis.
+//   local      — write only to the primary Redis (but assumes it's region-local).
+//   dual-write — write to primary, then synchronously to a secondary Redis.
+//                This is the CP leg of the CAP tradeoff: consistency across
+//                regions at the cost of added cross-region latency per write.
+type SyncMode string
+
+const (
+	SyncModeSingle    SyncMode = "single"
+	SyncModeLocal     SyncMode = "local"
+	SyncModeDualWrite SyncMode = "dual-write"
+)
+
 // Handler tracks cumulative user risk exposure in Redis.
 // When a user's daily spend crosses the configured threshold, it publishes
 // a RiskBreach event to SNS.
 type Handler struct {
-	redis      *redis.Client
-	sns        *sns.Client
-	topicARN   string
-	dailyLimit float64
+	redis          *redis.Client
+	redisSecondary *redis.Client // nil unless syncMode == dual-write
+	sns            *sns.Client
+	topicARN       string
+	dailyLimit     float64
+	syncMode       SyncMode
+	regionLabel    string
 }
 
+// New creates a Handler in single-region mode (no secondary Redis).
+// Kept for backwards compatibility with existing callers.
 func New(redisClient *redis.Client, snsClient *sns.Client, topicARN string, dailyLimit float64) *Handler {
 	return &Handler{
-		redis:      redisClient,
-		sns:        snsClient,
-		topicARN:   topicARN,
-		dailyLimit: dailyLimit,
+		redis:       redisClient,
+		sns:         snsClient,
+		topicARN:    topicARN,
+		dailyLimit:  dailyLimit,
+		syncMode:    SyncModeSingle,
+		regionLabel: "default",
+	}
+}
+
+// NewWithSync creates a Handler that can run in any of the three sync modes.
+// redisSecondary is only consulted when syncMode == SyncModeDualWrite; pass nil otherwise.
+func NewWithSync(
+	redisClient *redis.Client,
+	redisSecondary *redis.Client,
+	snsClient *sns.Client,
+	topicARN string,
+	dailyLimit float64,
+	syncMode SyncMode,
+	regionLabel string,
+) *Handler {
+	return &Handler{
+		redis:          redisClient,
+		redisSecondary: redisSecondary,
+		sns:            snsClient,
+		topicARN:       topicARN,
+		dailyLimit:     dailyLimit,
+		syncMode:       syncMode,
+		regionLabel:    regionLabel,
 	}
 }
 
@@ -42,7 +85,7 @@ func New(redisClient *redis.Client, snsClient *sns.Client, topicARN string, dail
 func (h *Handler) Handle(ctx context.Context, body string) error {
 	var tx events.TransactionEvent
 	if err := json.Unmarshal([]byte(body), &tx); err != nil {
-		log.Printf("risk: unparseable message, discarding: %v", err)
+		log.Printf("[%s] risk: unparseable message, discarding: %v", h.regionLabel, err)
 		return nil
 	}
 
@@ -51,8 +94,8 @@ func (h *Handler) Handle(ctx context.Context, body string) error {
 		return fmt.Errorf("update risk state: %w", err)
 	}
 
-	log.Printf("risk: user=%s tx=%s amount=%.2f daily_total=%.2f limit=%.2f",
-		tx.UserID, tx.TransactionID, tx.Amount, newTotal, h.dailyLimit)
+	log.Printf("[%s] risk: user=%s tx=%s amount=%.2f daily_total=%.2f limit=%.2f sync_mode=%s",
+		h.regionLabel, tx.UserID, tx.TransactionID, tx.Amount, newTotal, h.dailyLimit, h.syncMode)
 
 	if newTotal > h.dailyLimit {
 		breach := events.RiskBreach{
@@ -67,26 +110,55 @@ func (h *Handler) Handle(ctx context.Context, body string) error {
 		if err := h.publishBreach(ctx, breach); err != nil {
 			return fmt.Errorf("publish risk breach: %w", err)
 		}
-		log.Printf("risk: breach published for user=%s (total=%.2f > limit=%.2f)",
-			tx.UserID, newTotal, h.dailyLimit)
+		log.Printf("[%s] risk: breach published for user=%s (total=%.2f > limit=%.2f)",
+			h.regionLabel, tx.UserID, newTotal, h.dailyLimit)
 	}
 
 	return nil
 }
 
 // updateRisk atomically adds the transaction amount to the user's daily
-// cumulative spend in Redis and returns the new total.
+// cumulative spend in Redis and returns the new total. In dual-write mode
+// it also writes synchronously to the secondary Redis, failing the whole
+// operation if the secondary write fails (CP tradeoff).
 func (h *Handler) updateRisk(ctx context.Context, tx events.TransactionEvent) (float64, error) {
 	key := fmt.Sprintf("risk:user:%s:daily", tx.UserID)
 
+	// --- Primary Redis write (always happens, in every mode) ---
+	primaryStart := time.Now()
 	newTotal, err := h.redis.IncrByFloat(ctx, key, tx.Amount).Result()
+	primaryLatency := time.Since(primaryStart)
 	if err != nil {
-		return 0, fmt.Errorf("redis INCRBYFLOAT: %w", err)
+		return 0, fmt.Errorf("redis INCRBYFLOAT (primary): %w", err)
 	}
+	log.Printf("[%s] risk: primary_redis_latency=%v", h.regionLabel, primaryLatency)
 
+	// Anchor TTL to the first write of the day (primary).
 	if newTotal == tx.Amount {
 		if err := h.redis.Expire(ctx, key, dailyKeyTTL).Err(); err != nil {
-			log.Printf("risk: failed to set TTL for key %s: %v", key, err)
+			log.Printf("[%s] risk: failed to set TTL on primary key %s: %v", h.regionLabel, key, err)
+		}
+	}
+
+	// --- Secondary Redis write (dual-write mode only, SYNCHRONOUS) ---
+	// This is the CP leg: the handler does not return until the secondary
+	// acknowledges, so the user waits for cross-region replication. A failure
+	// here is fatal to the whole operation — the message stays on the queue
+	// and will be retried.
+	if h.syncMode == SyncModeDualWrite && h.redisSecondary != nil {
+		secondaryStart := time.Now()
+		secondaryTotal, err := h.redisSecondary.IncrByFloat(ctx, key, tx.Amount).Result()
+		secondaryLatency := time.Since(secondaryStart)
+		if err != nil {
+			return 0, fmt.Errorf("redis INCRBYFLOAT (secondary): %w", err)
+		}
+		log.Printf("[%s] risk: secondary_redis_latency=%v", h.regionLabel, secondaryLatency)
+
+		if secondaryTotal == tx.Amount {
+			if err := h.redisSecondary.Expire(ctx, key, dailyKeyTTL).Err(); err != nil {
+				log.Printf("[%s] risk: failed to set TTL on secondary key %s: %v",
+					h.regionLabel, key, err)
+			}
 		}
 	}
 

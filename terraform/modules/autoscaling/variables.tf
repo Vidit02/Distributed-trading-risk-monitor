@@ -78,15 +78,30 @@ variable "transaction_requests_per_target" {
   default     = 100
 }
 
-# Queue ARNs
+# Queue ARNs — each service now has its own dedicated queue (SNS fan-out).
 
-variable "high_priority_queue_arn" {
-  description = "ARN of the high-priority SQS queue (consumed by fraud and risk services)"
+variable "fraud_queue_arn" {
+  description = "ARN of the fraud service SQS queue"
   type        = string
 }
 
-variable "low_priority_queue_arn" {
-  description = "ARN of the low-priority SQS queue (consumed by analytics and audit-logging services)"
+variable "risk_queue_arn" {
+  description = "ARN of the risk service SQS queue"
+  type        = string
+}
+
+variable "compliance_queue_arn" {
+  description = "ARN of the compliance service SQS queue"
+  type        = string
+}
+
+variable "analytics_queue_arn" {
+  description = "ARN of the analytics service SQS queue"
+  type        = string
+}
+
+variable "audit_logging_queue_arn" {
+  description = "ARN of the audit-logging service SQS queue"
   type        = string
 }
 
@@ -95,8 +110,8 @@ variable "alert_queue_arn" {
   type        = string
 }
 
-variable "high_priority_dlq_arn" {
-  description = "ARN of the high-priority dead-letter queue (consumed by the manual-review service)"
+variable "fraud_dlq_arn" {
+  description = "ARN of the fraud DLQ (watched by the manual-review service)"
   type        = string
 }
 

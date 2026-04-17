@@ -113,14 +113,29 @@ variable "sns_compliance_events_arn" {
   type        = string
 }
 
-# SQS
-variable "high_priority_queue_url" {
-  description = "URL of high-priority SQS queue"
+# SQS — per-service queues (SNS fan-out: each service gets its own queue)
+variable "fraud_queue_url" {
+  description = "URL of the fraud service SQS queue"
   type        = string
 }
 
-variable "low_priority_queue_url" {
-  description = "URL of low-priority SQS queue"
+variable "risk_queue_url" {
+  description = "URL of the risk service SQS queue"
+  type        = string
+}
+
+variable "compliance_queue_url" {
+  description = "URL of the compliance service SQS queue"
+  type        = string
+}
+
+variable "analytics_queue_url" {
+  description = "URL of the analytics service SQS queue"
+  type        = string
+}
+
+variable "audit_logging_queue_url" {
+  description = "URL of the audit-logging service SQS queue"
   type        = string
 }
 
@@ -129,8 +144,8 @@ variable "alert_queue_url" {
   type        = string
 }
 
-variable "high_priority_dlq_url" {
-  description = "URL of the high-priority dead-letter queue (consumed by manual-review)"
+variable "fraud_dlq_url" {
+  description = "URL of the fraud service DLQ (consumed by manual-review)"
   type        = string
 }
 
@@ -161,4 +176,22 @@ variable "daily_limit" {
   description = "Per-user daily spend limit in USD (for risk service)"
   type        = number
   default     = 50000
+}
+
+variable "redis_sync_mode" {
+  description = "Redis sync mode: single, local, or dual-write"
+  type        = string
+  default     = "single"
+}
+
+variable "redis_secondary_addr" {
+  description = "Secondary Redis address for dual-write mode (host:port)"
+  type        = string
+  default     = ""
+}
+
+variable "redis_region_label" {
+  description = "Region label included in all log messages for filtering"
+  type        = string
+  default     = "us-west-2"
 }

@@ -4,25 +4,39 @@
 
 locals {
   # Queue name is just the last segment of the ARN
-  high_priority_queue_name = element(split(":", var.high_priority_queue_arn), 5)
-  low_priority_queue_name  = element(split(":", var.low_priority_queue_arn), 5)
-  alert_queue_name         = element(split(":", var.alert_queue_arn), 5)
-  high_priority_dlq_name   = element(split(":", var.high_priority_dlq_arn), 5)
+  alert_queue_name = element(split(":", var.alert_queue_arn), 5)
+  fraud_dlq_name   = element(split(":", var.fraud_dlq_arn), 5)
 
   # ALBRequestCountPerTarget resource_label = "{alb_suffix}/{tg_suffix}"
-  # e.g. app/trading-risk-monitor-alb/abc123/targetgroup/trading-risk-monitor-transaction/def456
   alb_suffix    = regex("loadbalancer/(.*)", var.alb_arn)[0]
   alb_tg_suffix = regex("(targetgroup/.+)$", var.alb_target_group_arn)[0]
 
+  # Each service has its own queue; alarms key on QueueName dimension.
+
   high_priority_services = {
-    fraud      = var.fraud_service_name
-    risk       = var.risk_service_name
-    compliance = var.compliance_service_name
+    fraud = {
+      service_name = var.fraud_service_name
+      queue_name   = element(split(":", var.fraud_queue_arn), 5)
+    }
+    risk = {
+      service_name = var.risk_service_name
+      queue_name   = element(split(":", var.risk_queue_arn), 5)
+    }
+    compliance = {
+      service_name = var.compliance_service_name
+      queue_name   = element(split(":", var.compliance_queue_arn), 5)
+    }
   }
 
   low_priority_services = {
-    analytics     = var.analytics_service_name
-    audit_logging = var.audit_logging_service_name
+    analytics = {
+      service_name = var.analytics_service_name
+      queue_name   = element(split(":", var.analytics_queue_arn), 5)
+    }
+    audit_logging = {
+      service_name = var.audit_logging_service_name
+      queue_name   = element(split(":", var.audit_logging_queue_arn), 5)
+    }
   }
 }
 
@@ -33,7 +47,7 @@ resource "aws_appautoscaling_target" "high_priority" {
 
   max_capacity       = var.high_priority_max_capacity
   min_capacity       = var.high_priority_min_capacity
-  resource_id        = "service/${var.cluster_name}/${each.value}"
+  resource_id        = "service/${var.cluster_name}/${each.value.service_name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
 }
@@ -43,7 +57,7 @@ resource "aws_appautoscaling_target" "low_priority" {
 
   max_capacity       = var.low_priority_max_capacity
   min_capacity       = var.low_priority_min_capacity
-  resource_id        = "service/${var.cluster_name}/${each.value}"
+  resource_id        = "service/${var.cluster_name}/${each.value.service_name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
 }
@@ -56,7 +70,7 @@ resource "aws_appautoscaling_target" "low_priority" {
 resource "aws_appautoscaling_policy" "high_priority_scale_out" {
   for_each = local.high_priority_services
 
-  name               = "${each.value}-scale-out"
+  name               = "${each.value.service_name}-scale-out"
   policy_type        = "StepScaling"
   resource_id        = aws_appautoscaling_target.high_priority[each.key].resource_id
   scalable_dimension = aws_appautoscaling_target.high_priority[each.key].scalable_dimension
@@ -86,7 +100,7 @@ resource "aws_appautoscaling_policy" "high_priority_scale_out" {
 resource "aws_appautoscaling_policy" "high_priority_scale_in" {
   for_each = local.high_priority_services
 
-  name               = "${each.value}-scale-in"
+  name               = "${each.value.service_name}-scale-in"
   policy_type        = "StepScaling"
   resource_id        = aws_appautoscaling_target.high_priority[each.key].resource_id
   scalable_dimension = aws_appautoscaling_target.high_priority[each.key].scalable_dimension
@@ -112,7 +126,7 @@ resource "aws_appautoscaling_policy" "high_priority_scale_in" {
 resource "aws_appautoscaling_policy" "low_priority_scale_out" {
   for_each = local.low_priority_services
 
-  name               = "${each.value}-scale-out"
+  name               = "${each.value.service_name}-scale-out"
   policy_type        = "StepScaling"
   resource_id        = aws_appautoscaling_target.low_priority[each.key].resource_id
   scalable_dimension = aws_appautoscaling_target.low_priority[each.key].scalable_dimension
@@ -141,7 +155,7 @@ resource "aws_appautoscaling_policy" "low_priority_scale_out" {
 resource "aws_appautoscaling_policy" "low_priority_scale_in" {
   for_each = local.low_priority_services
 
-  name               = "${each.value}-scale-in"
+  name               = "${each.value.service_name}-scale-in"
   policy_type        = "StepScaling"
   resource_id        = aws_appautoscaling_target.low_priority[each.key].resource_id
   scalable_dimension = aws_appautoscaling_target.low_priority[each.key].scalable_dimension
@@ -164,8 +178,8 @@ resource "aws_appautoscaling_policy" "low_priority_scale_in" {
 resource "aws_cloudwatch_metric_alarm" "high_priority_scale_out" {
   for_each = local.high_priority_services
 
-  alarm_name          = "${each.value}-high-queue-depth-scale-out"
-  alarm_description   = "Scale out ${each.value}: high-priority queue depth >= ${var.high_priority_scale_out_threshold}"
+  alarm_name          = "${each.value.service_name}-queue-depth-scale-out"
+  alarm_description   = "Scale out ${each.value.service_name}: queue depth >= ${var.high_priority_scale_out_threshold}"
   comparison_operator = "GreaterThanOrEqualToThreshold"
   evaluation_periods  = 1
   metric_name         = "ApproximateNumberOfMessagesVisible"
@@ -176,7 +190,7 @@ resource "aws_cloudwatch_metric_alarm" "high_priority_scale_out" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    QueueName = local.high_priority_queue_name
+    QueueName = each.value.queue_name
   }
 
   alarm_actions = [aws_appautoscaling_policy.high_priority_scale_out[each.key].arn]
@@ -185,8 +199,8 @@ resource "aws_cloudwatch_metric_alarm" "high_priority_scale_out" {
 resource "aws_cloudwatch_metric_alarm" "high_priority_scale_in" {
   for_each = local.high_priority_services
 
-  alarm_name          = "${each.value}-high-queue-depth-scale-in"
-  alarm_description   = "Scale in ${each.value}: high-priority queue depth < ${var.high_priority_scale_in_threshold}"
+  alarm_name          = "${each.value.service_name}-queue-depth-scale-in"
+  alarm_description   = "Scale in ${each.value.service_name}: queue depth < ${var.high_priority_scale_in_threshold}"
   comparison_operator = "LessThanThreshold"
   evaluation_periods  = 3
   metric_name         = "ApproximateNumberOfMessagesVisible"
@@ -197,7 +211,7 @@ resource "aws_cloudwatch_metric_alarm" "high_priority_scale_in" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    QueueName = local.high_priority_queue_name
+    QueueName = each.value.queue_name
   }
 
   alarm_actions = [aws_appautoscaling_policy.high_priority_scale_in[each.key].arn]
@@ -208,8 +222,8 @@ resource "aws_cloudwatch_metric_alarm" "high_priority_scale_in" {
 resource "aws_cloudwatch_metric_alarm" "low_priority_scale_out" {
   for_each = local.low_priority_services
 
-  alarm_name          = "${each.value}-low-queue-depth-scale-out"
-  alarm_description   = "Scale out ${each.value}: low-priority queue depth >= ${var.low_priority_scale_out_threshold}"
+  alarm_name          = "${each.value.service_name}-low-queue-depth-scale-out"
+  alarm_description   = "Scale out ${each.value.service_name}: queue depth >= ${var.low_priority_scale_out_threshold}"
   comparison_operator = "GreaterThanOrEqualToThreshold"
   evaluation_periods  = 2
   metric_name         = "ApproximateNumberOfMessagesVisible"
@@ -220,7 +234,7 @@ resource "aws_cloudwatch_metric_alarm" "low_priority_scale_out" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    QueueName = local.low_priority_queue_name
+    QueueName = each.value.queue_name
   }
 
   alarm_actions = [aws_appautoscaling_policy.low_priority_scale_out[each.key].arn]
@@ -229,8 +243,8 @@ resource "aws_cloudwatch_metric_alarm" "low_priority_scale_out" {
 resource "aws_cloudwatch_metric_alarm" "low_priority_scale_in" {
   for_each = local.low_priority_services
 
-  alarm_name          = "${each.value}-low-queue-depth-scale-in"
-  alarm_description   = "Scale in ${each.value}: low-priority queue depth < ${var.low_priority_scale_in_threshold}"
+  alarm_name          = "${each.value.service_name}-low-queue-depth-scale-in"
+  alarm_description   = "Scale in ${each.value.service_name}: queue depth < ${var.low_priority_scale_in_threshold}"
   comparison_operator = "LessThanThreshold"
   evaluation_periods  = 5
   metric_name         = "ApproximateNumberOfMessagesVisible"
@@ -241,7 +255,7 @@ resource "aws_cloudwatch_metric_alarm" "low_priority_scale_in" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    QueueName = local.low_priority_queue_name
+    QueueName = each.value.queue_name
   }
 
   alarm_actions = [aws_appautoscaling_policy.low_priority_scale_in[each.key].arn]
@@ -342,7 +356,7 @@ resource "aws_cloudwatch_metric_alarm" "alert_scale_in" {
 }
 
 # ---------------------------------------------------------------------------
-# Manual-review service — scales on the high-priority DLQ depth.
+# Manual-review service — scales on the fraud DLQ depth.
 # Any message landing in the DLQ means a transaction failed processing and
 # needs human attention, so we scale out immediately at threshold = 1.
 # min_capacity = 0 so the service stays at zero cost when the DLQ is empty.
@@ -402,7 +416,7 @@ resource "aws_appautoscaling_policy" "manual_review_scale_in" {
 
 resource "aws_cloudwatch_metric_alarm" "manual_review_scale_out" {
   alarm_name          = "${var.manual_review_service_name}-dlq-depth-scale-out"
-  alarm_description   = "Scale out ${var.manual_review_service_name}: high-priority DLQ depth >= ${var.manual_review_scale_out_threshold}"
+  alarm_description   = "Scale out ${var.manual_review_service_name}: fraud DLQ depth >= ${var.manual_review_scale_out_threshold}"
   comparison_operator = "GreaterThanOrEqualToThreshold"
   evaluation_periods  = 1
   metric_name         = "ApproximateNumberOfMessagesVisible"
@@ -413,7 +427,7 @@ resource "aws_cloudwatch_metric_alarm" "manual_review_scale_out" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    QueueName = local.high_priority_dlq_name
+    QueueName = local.fraud_dlq_name
   }
 
   alarm_actions = [aws_appautoscaling_policy.manual_review_scale_out.arn]
@@ -421,7 +435,7 @@ resource "aws_cloudwatch_metric_alarm" "manual_review_scale_out" {
 
 resource "aws_cloudwatch_metric_alarm" "manual_review_scale_in" {
   alarm_name          = "${var.manual_review_service_name}-dlq-depth-scale-in"
-  alarm_description   = "Scale in ${var.manual_review_service_name}: high-priority DLQ depth < ${var.manual_review_scale_in_threshold}"
+  alarm_description   = "Scale in ${var.manual_review_service_name}: fraud DLQ depth < ${var.manual_review_scale_in_threshold}"
   comparison_operator = "LessThanThreshold"
   evaluation_periods  = 5
   metric_name         = "ApproximateNumberOfMessagesVisible"
@@ -432,7 +446,7 @@ resource "aws_cloudwatch_metric_alarm" "manual_review_scale_in" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    QueueName = local.high_priority_dlq_name
+    QueueName = local.fraud_dlq_name
   }
 
   alarm_actions = [aws_appautoscaling_policy.manual_review_scale_in.arn]

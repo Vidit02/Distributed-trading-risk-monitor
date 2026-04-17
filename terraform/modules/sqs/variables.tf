@@ -47,4 +47,3 @@ variable "low_priority_max_receive_count" {
   type        = number
   default     = 5
 }
-
