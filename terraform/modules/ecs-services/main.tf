@@ -147,6 +147,7 @@ resource "aws_ecs_task_definition" "risk" {
       environment = [
         { name = "HIGH_PRIORITY_QUEUE_URL", value = var.risk_queue_url },
         { name = "RISK_BREACH_TOPIC_ARN", value = var.sns_risk_breach_events_arn },
+        { name = "DYNAMODB_TABLE_NAME", value = var.dynamodb_table_name },
         { name = "REDIS_ADDR", value = "${var.redis_primary_endpoint}:${var.redis_port}" },
         { name = "DAILY_LIMIT", value = tostring(var.daily_limit) },
         { name = "AWS_REGION", value = var.aws_region },
@@ -323,6 +324,7 @@ resource "aws_ecs_task_definition" "compliance" {
       environment = [
         { name = "HIGH_PRIORITY_QUEUE_URL", value = var.compliance_queue_url },
         { name = "COMPLIANCE_TOPIC_ARN", value = var.sns_compliance_events_arn },
+        { name = "DYNAMODB_TABLE_NAME", value = var.dynamodb_table_name },
         { name = "AWS_REGION", value = var.aws_region }
       ]
 

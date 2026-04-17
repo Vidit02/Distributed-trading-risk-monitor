@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
@@ -22,6 +23,7 @@ func main() {
 
 	queueURL := requireEnv("HIGH_PRIORITY_QUEUE_URL")
 	complianceTopicARN := requireEnv("COMPLIANCE_TOPIC_ARN")
+	dynamoTableName := requireEnv("DYNAMODB_TABLE_NAME")
 
 	blockedUsers := splitCSV(os.Getenv("BLOCKED_USERS"))
 	blockedMerchants := splitCSV(os.Getenv("BLOCKED_MERCHANTS"))
@@ -33,8 +35,9 @@ func main() {
 
 	sqsClient := sqs.NewFromConfig(awsCfg)
 	snsClient := sns.NewFromConfig(awsCfg)
+	dynamoClient := dynamodb.NewFromConfig(awsCfg)
 
-	h := handler.New(snsClient, complianceTopicARN, blockedUsers, blockedMerchants)
+	h := handler.New(snsClient, complianceTopicARN, dynamoClient, dynamoTableName, blockedUsers, blockedMerchants)
 
 	consumer := sqsconsumer.New(sqsClient, sqsconsumer.Config{
 		QueueURL: queueURL,

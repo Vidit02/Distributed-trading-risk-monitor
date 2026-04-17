@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	dynamodbTypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	snsTypes "github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/google/uuid"
@@ -31,18 +33,21 @@ const ctrThreshold = 10_000.0
 type Handler struct {
 	sns              *sns.Client
 	topicARN         string
+	dynamo           *dynamodb.Client
+	tableName        string
 	blockedUsers     map[string]struct{}
 	blockedMerchants map[string]struct{}
 }
 
-func New(snsClient *sns.Client, topicARN string, blockedUsers, blockedMerchants []string) *Handler {
-	h := &Handler{
+func New(snsClient *sns.Client, topicARN string, dynamoClient *dynamodb.Client, tableName string, blockedUsers, blockedMerchants []string) *Handler {
+	return &Handler{
 		sns:              snsClient,
 		topicARN:         topicARN,
+		dynamo:           dynamoClient,
+		tableName:        tableName,
 		blockedUsers:     toSet(blockedUsers),
 		blockedMerchants: toSet(blockedMerchants),
 	}
-	return h
 }
 
 func (h *Handler) Handle(ctx context.Context, body string) error {
@@ -66,6 +71,10 @@ func (h *Handler) Handle(ctx context.Context, body string) error {
 		Reason:        fmt.Sprintf("%d compliance rule(s) violated", len(violations)),
 		Severity:      resolveSeverity(violations),
 		DetectedAt:    time.Now().UTC(),
+	}
+
+	if err := h.flagTransaction(ctx, tx, v.ViolationID); err != nil {
+		log.Printf("compliance: DynamoDB update failed for %s: %v", tx.TransactionID, err)
 	}
 
 	if err := h.publishViolation(ctx, v); err != nil {
@@ -129,6 +138,27 @@ func resolveSeverity(rules []string) events.Severity {
 	default:
 		return events.SeverityLow
 	}
+}
+
+// flagTransaction marks the transaction as flagged in DynamoDB due to a compliance violation.
+func (h *Handler) flagTransaction(ctx context.Context, tx events.TransactionEvent, violationID string) error {
+	_, err := h.dynamo.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(h.tableName),
+		Key: map[string]dynamodbTypes.AttributeValue{
+			"transaction_id": &dynamodbTypes.AttributeValueMemberS{Value: tx.TransactionID},
+			"timestamp":      &dynamodbTypes.AttributeValueMemberS{Value: tx.Timestamp.Format(time.RFC3339Nano)},
+		},
+		UpdateExpression: aws.String("SET #st = :status, flagged_reason = :reason, violation_id = :violation_id"),
+		ExpressionAttributeNames: map[string]string{
+			"#st": "status",
+		},
+		ExpressionAttributeValues: map[string]dynamodbTypes.AttributeValue{
+			":status":       &dynamodbTypes.AttributeValueMemberS{Value: "flagged"},
+			":reason":       &dynamodbTypes.AttributeValueMemberS{Value: "compliance_violation"},
+			":violation_id": &dynamodbTypes.AttributeValueMemberS{Value: violationID},
+		},
+	})
+	return err
 }
 
 func (h *Handler) publishViolation(ctx context.Context, v events.ComplianceViolation) error {

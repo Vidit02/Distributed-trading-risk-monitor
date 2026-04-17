@@ -1,9 +1,9 @@
 terraform {
   backend "s3" {
-    bucket         = "trading-risk-monitor-tfstate-dhyan"
+    bucket         = "trading-risk-monitor-tfstate"
     key            = "terraform.tfstate"
     region         = "us-west-2"
     encrypt        = true
-    dynamodb_table = "trading-risk-monitor-tfstate-lock-dhyan"
+    dynamodb_table = "trading-risk-monitor-tfstate-lock"
   }
 }
