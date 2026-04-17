@@ -120,6 +120,7 @@ module "autoscaling" {
   project      = var.project
   cluster_name = module.ecs_cluster.cluster_name
 
+  transaction_service_name   = module.ecs_services.transaction_service_name
   fraud_service_name         = module.ecs_services.fraud_service_name
   risk_service_name          = module.ecs_services.risk_service_name
   analytics_service_name     = module.ecs_services.analytics_service_name
@@ -127,6 +128,9 @@ module "autoscaling" {
   compliance_service_name    = "${var.project}-compliance"
   alert_service_name         = "${var.project}-alert"
   manual_review_service_name = "${var.project}-manual-review"
+
+  alb_arn              = module.alb.alb_arn
+  alb_target_group_arn = module.alb.transaction_target_group_arn
 
   fraud_queue_arn         = module.sqs.fraud_queue_arn
   risk_queue_arn          = module.sqs.risk_queue_arn
@@ -150,6 +154,9 @@ module "cloudwatch_dashboard" {
   risk_service_name          = module.ecs_services.risk_service_name
   analytics_service_name     = module.ecs_services.analytics_service_name
   audit_logging_service_name = module.ecs_services.audit_logging_service_name
+  compliance_service_name    = "${var.project}-compliance"
+  alert_service_name         = "${var.project}-alert"
+  manual_review_service_name = "${var.project}-manual-review"
 
   alb_arn = module.alb.alb_arn
 }

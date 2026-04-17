@@ -17,6 +17,8 @@ const DEFAULT_STATUS = {
   low_dlq_depth: 0,
   high_queue_depth: 0,
   low_queue_depth: 0,
+  alert_queue_depth: 0,
+  alert_dlq_depth: 0,
   events: [],
 }
 
@@ -96,6 +98,8 @@ export default function App() {
             lowDlqDepth={status.low_dlq_depth}
             highQueueDepth={status.high_queue_depth}
             lowQueueDepth={status.low_queue_depth}
+            alertQueueDepth={status.alert_queue_depth}
+            alertDlqDepth={status.alert_dlq_depth}
             events={status.events}
             onRefresh={fetchStatus}
           />

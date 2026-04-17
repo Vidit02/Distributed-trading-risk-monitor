@@ -1,6 +1,7 @@
-export default function ChaosTab({ services, highDlqDepth, lowDlqDepth, highQueueDepth, lowQueueDepth, events, onRefresh }) {
-  const total = services.length
-  const healthy = services.filter(s => s.healthy).length
+export default function ChaosTab({ services, highDlqDepth, lowDlqDepth, highQueueDepth, lowQueueDepth, alertQueueDepth, alertDlqDepth, events, onRefresh }) {
+  const total    = services.length
+  const healthy  = services.filter(s => s.healthy).length
+  const scaling  = services.filter(s => s.scaling_up || s.scaling_down).length
 
   const callApi = async (url) => {
     try {
@@ -33,27 +34,26 @@ export default function ChaosTab({ services, highDlqDepth, lowDlqDepth, highQueu
           >
             {healthy} / {total}
           </p>
+          {scaling > 0 && (
+            <p className="text-xs mt-1 font-medium" style={{ color: '#86efac' }}>
+              ↑↓ {scaling} scaling
+            </p>
+          )}
         </div>
 
         {/* High-priority DLQ */}
         <div className="rounded-lg p-4" style={{ backgroundColor: '#1a1d27', border: '1px solid #2d3748' }}>
           <p className="text-xs mb-1" style={{ color: '#718096' }}>High-priority DLQ</p>
-          <p
-            className="text-2xl font-bold"
-            style={{ color: highDlqDepth > 0 ? '#ef4444' : '#e2e8f0' }}
-          >
+          <p className="text-2xl font-bold" style={{ color: highDlqDepth > 0 ? '#ef4444' : '#e2e8f0' }}>
             {highDlqDepth}
           </p>
         </div>
 
-        {/* Low-priority DLQ */}
+        {/* Alert DLQ */}
         <div className="rounded-lg p-4" style={{ backgroundColor: '#1a1d27', border: '1px solid #2d3748' }}>
-          <p className="text-xs mb-1" style={{ color: '#718096' }}>Low-priority DLQ</p>
-          <p
-            className="text-2xl font-bold"
-            style={{ color: lowDlqDepth > 0 ? '#ef4444' : '#e2e8f0' }}
-          >
-            {lowDlqDepth}
+          <p className="text-xs mb-1" style={{ color: '#718096' }}>Alert DLQ</p>
+          <p className="text-2xl font-bold" style={{ color: alertDlqDepth > 0 ? '#ef4444' : '#e2e8f0' }}>
+            {alertDlqDepth}
           </p>
         </div>
 
@@ -69,7 +69,7 @@ export default function ChaosTab({ services, highDlqDepth, lowDlqDepth, highQueu
       {/* ------------------------------------------------------------------ */}
       <div>
         <h2 className="text-sm font-semibold mb-3" style={{ color: '#a0aec0' }}>Services</h2>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-4">
           {services.map(svc => (
             <div
               key={svc.name}
@@ -85,10 +85,31 @@ export default function ChaosTab({ services, highDlqDepth, lowDlqDepth, highQueu
                 <span className="font-semibold text-white text-sm truncate">{svc.display}</span>
               </div>
 
-              {/* Health status */}
-              <p className="text-xs" style={{ color: svc.healthy ? '#22c55e' : '#ef4444' }}>
-                {svc.healthy ? 'Healthy' : 'Unhealthy'}
+              {/* Task counts */}
+              <p className="text-xs font-mono" style={{ color: '#a0aec0' }}>
+                {svc.running} running / {svc.desired} desired
+                {svc.pending > 0 && (
+                  <span style={{ color: '#f59e0b' }}> · {svc.pending} pending</span>
+                )}
               </p>
+
+              {/* Autoscaling badge */}
+              {svc.scaling_up && (
+                <span
+                  className="text-xs px-2 py-0.5 rounded-full w-fit font-medium"
+                  style={{ backgroundColor: '#14532d', color: '#86efac' }}
+                >
+                  ↑ Scaling up
+                </span>
+              )}
+              {svc.scaling_down && (
+                <span
+                  className="text-xs px-2 py-0.5 rounded-full w-fit font-medium"
+                  style={{ backgroundColor: '#1e3a5f', color: '#93c5fd' }}
+                >
+                  ↓ Scaling down
+                </span>
+              )}
 
               {/* Queue badge */}
               {svc.queue && (
@@ -96,7 +117,7 @@ export default function ChaosTab({ services, highDlqDepth, lowDlqDepth, highQueu
                   className="text-xs px-2 py-0.5 rounded-full w-fit"
                   style={{ backgroundColor: '#2d3748', color: '#a0aec0' }}
                 >
-                  Queue: {svc.queue}
+                  {svc.queue}
                 </span>
               )}
 
@@ -152,10 +173,12 @@ export default function ChaosTab({ services, highDlqDepth, lowDlqDepth, highQueu
         <h2 className="text-sm font-semibold mb-4" style={{ color: '#a0aec0' }}>Queue depth</h2>
 
         {[
-          { label: 'High queue', value: highQueueDepth, color: '#3b82f6' },
-          { label: 'Low queue',  value: lowQueueDepth,  color: '#8b5cf6' },
-          { label: 'High DLQ',  value: highDlqDepth,   color: '#ef4444' },
-          { label: 'Low DLQ',   value: lowDlqDepth,    color: '#f59e0b' },
+          { label: 'High queue',  value: highQueueDepth,  color: '#3b82f6' },
+          { label: 'Low queue',   value: lowQueueDepth,   color: '#8b5cf6' },
+          { label: 'Alert queue', value: alertQueueDepth, color: '#f59e0b' },
+          { label: 'High DLQ',   value: highDlqDepth,    color: '#ef4444' },
+          { label: 'Low DLQ',    value: lowDlqDepth,     color: '#f97316' },
+          { label: 'Alert DLQ',  value: alertDlqDepth,   color: '#ec4899' },
         ].map(({ label, value, color }) => (
           <div key={label} className="flex items-center gap-3 mb-3">
             <span className="text-xs w-24 flex-shrink-0" style={{ color: '#a0aec0' }}>{label}</span>

@@ -1,14 +1,10 @@
 locals {
   name_prefix = var.project
 
-  # Each downstream consumer gets its OWN dedicated queue subscribed to the
-  # transaction-events SNS topic. This is the SNS fan-out pattern: every
-  # service sees every transaction instead of competing for messages.
-  #
-  # High-priority services (fraud, risk, compliance) filter on priority
-  # "high"/"critical". Low-priority services (analytics, audit-logging)
-  # filter on "low"/"medium".
-  services = {
+  # fraud/risk/compliance receive only high-priority transactions.
+  # analytics/audit-logging receive ALL transactions (no filter) so every
+  # transaction is logged and analysed regardless of priority.
+  filtered_services = {
     "fraud" = {
       priority_values    = ["high", "critical"]
       visibility_timeout = var.high_priority_visibility_timeout
@@ -24,17 +20,24 @@ locals {
       visibility_timeout = var.high_priority_visibility_timeout
       max_receive_count  = var.high_priority_max_receive_count
     }
+  }
+
+  unfiltered_services = {
     "analytics" = {
-      priority_values    = ["low", "medium"]
       visibility_timeout = var.low_priority_visibility_timeout
       max_receive_count  = var.low_priority_max_receive_count
     }
     "audit-logging" = {
-      priority_values    = ["low", "medium"]
       visibility_timeout = var.low_priority_visibility_timeout
       max_receive_count  = var.low_priority_max_receive_count
     }
   }
+
+  # Combined map used for queue/DLQ/policy resources.
+  services = merge(
+    { for k, v in local.filtered_services : k => v },
+    { for k, v in local.unfiltered_services : k => v }
+  )
 }
 
 # ---------------------------------------------------------------------------
@@ -98,9 +101,9 @@ resource "aws_sqs_queue_policy" "service" {
   policy    = data.aws_iam_policy_document.service[each.key].json
 }
 
-# SNS → SQS subscriptions with per-service priority filters
-resource "aws_sns_topic_subscription" "service" {
-  for_each = local.services
+# Filtered subscriptions — fraud/risk/compliance receive only high/critical
+resource "aws_sns_topic_subscription" "filtered_service" {
+  for_each = local.filtered_services
 
   topic_arn = var.sns_topic_arn
   protocol  = "sqs"
@@ -109,6 +112,17 @@ resource "aws_sns_topic_subscription" "service" {
   filter_policy = jsonencode({
     priority = each.value.priority_values
   })
+
+  depends_on = [aws_sqs_queue_policy.service]
+}
+
+# Unfiltered subscriptions — analytics/audit-logging receive ALL transactions
+resource "aws_sns_topic_subscription" "unfiltered_service" {
+  for_each = local.unfiltered_services
+
+  topic_arn = var.sns_topic_arn
+  protocol  = "sqs"
+  endpoint  = aws_sqs_queue.service[each.key].arn
 
   depends_on = [aws_sqs_queue_policy.service]
 }

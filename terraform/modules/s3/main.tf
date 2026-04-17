@@ -47,6 +47,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "audit_logs" {
     id     = "audit-log-lifecycle"
     status = "Enabled"
 
+    filter {}
+
     transition {
       days          = var.glacier_transition_days
       storage_class = "GLACIER"

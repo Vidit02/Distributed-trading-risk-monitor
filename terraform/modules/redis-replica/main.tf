@@ -137,6 +137,10 @@ resource "aws_elasticache_replication_group" "east_redis" {
 
   apply_immediately = true
 
+  lifecycle {
+    ignore_changes = [auth_token, auth_token_update_strategy]
+  }
+
   tags = {
     Name = "${local.name_prefix}-east-redis"
   }

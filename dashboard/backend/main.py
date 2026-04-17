@@ -12,13 +12,18 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-CLUSTER_NAME = os.getenv("CLUSTER_NAME", "trading-risk-monitor-cluster")
-HIGH_PRIORITY_QUEUE_URL = os.getenv("HIGH_PRIORITY_QUEUE_URL", "https://sqs.us-west-2.amazonaws.com/265898753907/trading-risk-monitor-high-priority")
-LOW_PRIORITY_QUEUE_URL = os.getenv("LOW_PRIORITY_QUEUE_URL", "https://sqs.us-west-2.amazonaws.com/265898753907/trading-risk-monitor-low-priority")
-HIGH_PRIORITY_DLQ_URL = os.getenv("HIGH_PRIORITY_DLQ_URL", "")
-LOW_PRIORITY_DLQ_URL = os.getenv("LOW_PRIORITY_DLQ_URL", "")
-AWS_REGION = os.getenv("AWS_REGION", "us-west-2")
-DYNAMODB_TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "trading-risk-monitor-transactions")
+_ACCOUNT = "265898753907"
+_SQS_BASE = f"https://sqs.us-west-2.amazonaws.com/{_ACCOUNT}"
+
+CLUSTER_NAME            = os.getenv("CLUSTER_NAME",            "trading-risk-monitor-cluster")
+HIGH_PRIORITY_QUEUE_URL = os.getenv("HIGH_PRIORITY_QUEUE_URL", f"{_SQS_BASE}/trading-risk-monitor-high-priority")
+LOW_PRIORITY_QUEUE_URL  = os.getenv("LOW_PRIORITY_QUEUE_URL",  f"{_SQS_BASE}/trading-risk-monitor-low-priority")
+HIGH_PRIORITY_DLQ_URL   = os.getenv("HIGH_PRIORITY_DLQ_URL",   f"{_SQS_BASE}/trading-risk-monitor-high-priority-dlq")
+LOW_PRIORITY_DLQ_URL    = os.getenv("LOW_PRIORITY_DLQ_URL",    f"{_SQS_BASE}/trading-risk-monitor-low-priority-dlq")
+ALERT_QUEUE_URL         = os.getenv("ALERT_QUEUE_URL",         f"{_SQS_BASE}/trading-risk-monitor-alert")
+ALERT_DLQ_URL           = os.getenv("ALERT_DLQ_URL",           f"{_SQS_BASE}/trading-risk-monitor-alert-dlq")
+AWS_REGION              = os.getenv("AWS_REGION",              "us-west-2")
+DYNAMODB_TABLE_NAME     = os.getenv("DYNAMODB_TABLE_NAME",     "trading-risk-monitor-transactions")
 
 # ---------------------------------------------------------------------------
 # FastAPI app
@@ -45,11 +50,14 @@ transactions_table = dynamo.Table(DYNAMODB_TABLE_NAME)
 # Service definitions
 # ---------------------------------------------------------------------------
 SERVICES = [
-    {"name": "transaction",   "display": "Transaction",     "queue": None,            "ecs": "trading-risk-monitor-transaction"},
-    {"name": "fraud",         "display": "Fraud detection", "queue": "high-priority", "ecs": "trading-risk-monitor-fraud"},
-    {"name": "risk",          "display": "Risk monitor",    "queue": "high-priority", "ecs": "trading-risk-monitor-risk"},
-    {"name": "analytics",     "display": "Analytics",       "queue": "low-priority",  "ecs": "trading-risk-monitor-analytics"},
-    {"name": "audit-logging", "display": "Audit logging",   "queue": "low-priority",  "ecs": "trading-risk-monitor-audit-logging"},
+    {"name": "transaction",   "display": "Transaction",    "queue": None,                "ecs": "trading-risk-monitor-transaction"},
+    {"name": "fraud",         "display": "Fraud detection","queue": "high-priority",     "ecs": "trading-risk-monitor-fraud"},
+    {"name": "risk",          "display": "Risk monitor",   "queue": "high-priority",     "ecs": "trading-risk-monitor-risk"},
+    {"name": "compliance",    "display": "Compliance",     "queue": "high-priority",     "ecs": "trading-risk-monitor-compliance"},
+    {"name": "analytics",     "display": "Analytics",      "queue": "low-priority",      "ecs": "trading-risk-monitor-analytics"},
+    {"name": "audit-logging", "display": "Audit logging",  "queue": "low-priority",      "ecs": "trading-risk-monitor-audit-logging"},
+    {"name": "alert",         "display": "Alert",          "queue": "alert",             "ecs": "trading-risk-monitor-alert"},
+    {"name": "manual-review", "display": "Manual review",  "queue": "high-priority-dlq", "ecs": "trading-risk-monitor-manual-review"},
 ]
 
 # ---------------------------------------------------------------------------
@@ -96,6 +104,8 @@ def _dlq_url_for_queue(queue_label: str | None) -> str:
         return HIGH_PRIORITY_DLQ_URL
     if queue_label == "low-priority":
         return LOW_PRIORITY_DLQ_URL
+    if queue_label == "alert":
+        return ALERT_DLQ_URL
     return ""
 
 # ---------------------------------------------------------------------------
@@ -108,38 +118,55 @@ def get_status():
     try:
         ecs_names = [svc["ecs"] for svc in SERVICES]
         resp = ecs.describe_services(cluster=CLUSTER_NAME, services=ecs_names)
-        running_map: dict[str, int] = {}
+        ecs_map: dict[str, dict] = {}
         for svc_detail in resp.get("services", []):
-            running_map[svc_detail["serviceName"]] = svc_detail.get("runningCount", 0)
+            ecs_map[svc_detail["serviceName"]] = {
+                "running": svc_detail.get("runningCount", 0),
+                "desired": svc_detail.get("desiredCount", 0),
+                "pending": svc_detail.get("pendingCount", 0),
+            }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
     service_statuses = []
     for svc in SERVICES:
-        running = running_map.get(svc["ecs"], 0)
+        counts  = ecs_map.get(svc["ecs"], {"running": 0, "desired": 0, "pending": 0})
+        running = counts["running"]
+        desired = counts["desired"]
+        pending = counts["pending"]
         delay_ms = delays.get(svc["name"], 0)
+        scaling_up   = desired > running
+        scaling_down = desired < running
         service_statuses.append({
-            "name": svc["name"],
-            "display": svc["display"],
-            "queue": svc["queue"],
-            "healthy": running > 0,
-            "running": running,
-            "delayed": delay_ms > 0,
-            "delay_ms": delay_ms,
+            "name":         svc["name"],
+            "display":      svc["display"],
+            "queue":        svc["queue"],
+            "healthy":      running > 0,
+            "running":      running,
+            "desired":      desired,
+            "pending":      pending,
+            "scaling_up":   scaling_up,
+            "scaling_down": scaling_down,
+            "delayed":      delay_ms > 0,
+            "delay_ms":     delay_ms,
         })
 
-    high_depth = get_dlq_depth(HIGH_PRIORITY_DLQ_URL)
-    low_depth = get_dlq_depth(LOW_PRIORITY_DLQ_URL)
-    high_queue_depth = get_dlq_depth(HIGH_PRIORITY_QUEUE_URL)
-    low_queue_depth = get_dlq_depth(LOW_PRIORITY_QUEUE_URL)
+    high_dlq_depth    = get_dlq_depth(HIGH_PRIORITY_DLQ_URL)
+    low_dlq_depth     = get_dlq_depth(LOW_PRIORITY_DLQ_URL)
+    high_queue_depth  = get_dlq_depth(HIGH_PRIORITY_QUEUE_URL)
+    low_queue_depth   = get_dlq_depth(LOW_PRIORITY_QUEUE_URL)
+    alert_queue_depth = get_dlq_depth(ALERT_QUEUE_URL)
+    alert_dlq_depth   = get_dlq_depth(ALERT_DLQ_URL)
 
     return {
-        "services": service_statuses,
-        "high_dlq_depth": high_depth,
-        "low_dlq_depth": low_depth,
-        "high_queue_depth": high_queue_depth,
-        "low_queue_depth": low_queue_depth,
-        "events": events,
+        "services":          service_statuses,
+        "high_dlq_depth":    high_dlq_depth,
+        "low_dlq_depth":     low_dlq_depth,
+        "high_queue_depth":  high_queue_depth,
+        "low_queue_depth":   low_queue_depth,
+        "alert_queue_depth": alert_queue_depth,
+        "alert_dlq_depth":   alert_dlq_depth,
+        "events":            events,
     }
 
 
@@ -280,17 +307,19 @@ def get_metrics():
         error_rate = round((flagged / total * 100), 2) if total > 0 else 0.0
 
         # Current queue depths from SQS
-        high_depth = get_dlq_depth(HIGH_PRIORITY_QUEUE_URL)
-        low_depth  = get_dlq_depth(LOW_PRIORITY_QUEUE_URL)
+        high_depth  = get_dlq_depth(HIGH_PRIORITY_QUEUE_URL)
+        low_depth   = get_dlq_depth(LOW_PRIORITY_QUEUE_URL)
+        alert_depth = get_dlq_depth(ALERT_QUEUE_URL)
 
         return {
-            "tx_per_min":   tx_per_min,
-            "error_rate":   error_rate,
-            "total":        total,
-            "flagged":      flagged,
-            "type_counts":  type_counts,
-            "high_queue_depth": high_depth,
-            "low_queue_depth":  low_depth,
+            "tx_per_min":        tx_per_min,
+            "error_rate":        error_rate,
+            "total":             total,
+            "flagged":           flagged,
+            "type_counts":       type_counts,
+            "high_queue_depth":  high_depth,
+            "low_queue_depth":   low_depth,
+            "alert_queue_depth": alert_depth,
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

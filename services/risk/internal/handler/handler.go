@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	dynamodbTypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	snsTypes "github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/google/uuid"
@@ -34,12 +36,14 @@ const (
 
 // Handler tracks cumulative user risk exposure in Redis.
 // When a user's daily spend crosses the configured threshold, it publishes
-// a RiskBreach event to SNS.
+// a RiskBreach event to SNS and marks the transaction blocked in DynamoDB.
 type Handler struct {
 	redis          *redis.Client
 	redisSecondary *redis.Client // nil unless syncMode == dual-write
 	sns            *sns.Client
 	topicARN       string
+	dynamo         *dynamodb.Client
+	tableName      string
 	dailyLimit     float64
 	syncMode       SyncMode
 	regionLabel    string
@@ -47,11 +51,13 @@ type Handler struct {
 
 // New creates a Handler in single-region mode (no secondary Redis).
 // Kept for backwards compatibility with existing callers.
-func New(redisClient *redis.Client, snsClient *sns.Client, topicARN string, dailyLimit float64) *Handler {
+func New(redisClient *redis.Client, snsClient *sns.Client, topicARN string, dynamoClient *dynamodb.Client, tableName string, dailyLimit float64) *Handler {
 	return &Handler{
 		redis:       redisClient,
 		sns:         snsClient,
 		topicARN:    topicARN,
+		dynamo:      dynamoClient,
+		tableName:   tableName,
 		dailyLimit:  dailyLimit,
 		syncMode:    SyncModeSingle,
 		regionLabel: "default",
@@ -65,6 +71,8 @@ func NewWithSync(
 	redisSecondary *redis.Client,
 	snsClient *sns.Client,
 	topicARN string,
+	dynamoClient *dynamodb.Client,
+	tableName string,
 	dailyLimit float64,
 	syncMode SyncMode,
 	regionLabel string,
@@ -74,6 +82,8 @@ func NewWithSync(
 		redisSecondary: redisSecondary,
 		sns:            snsClient,
 		topicARN:       topicARN,
+		dynamo:         dynamoClient,
+		tableName:      tableName,
 		dailyLimit:     dailyLimit,
 		syncMode:       syncMode,
 		regionLabel:    regionLabel,
@@ -106,6 +116,9 @@ func (h *Handler) Handle(ctx context.Context, body string) error {
 			CurrentValue:   newTotal,
 			ThresholdValue: h.dailyLimit,
 			BreachedAt:     time.Now().UTC(),
+		}
+		if err := h.blockTransaction(ctx, tx, breach.BreachID); err != nil {
+			log.Printf("[%s] risk: DynamoDB update failed for %s: %v", h.regionLabel, tx.TransactionID, err)
 		}
 		if err := h.publishBreach(ctx, breach); err != nil {
 			return fmt.Errorf("publish risk breach: %w", err)
@@ -163,6 +176,27 @@ func (h *Handler) updateRisk(ctx context.Context, tx events.TransactionEvent) (f
 	}
 
 	return newTotal, nil
+}
+
+// blockTransaction marks the transaction as blocked in DynamoDB due to a risk limit breach.
+func (h *Handler) blockTransaction(ctx context.Context, tx events.TransactionEvent, breachID string) error {
+	_, err := h.dynamo.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(h.tableName),
+		Key: map[string]dynamodbTypes.AttributeValue{
+			"transaction_id": &dynamodbTypes.AttributeValueMemberS{Value: tx.TransactionID},
+			"timestamp":      &dynamodbTypes.AttributeValueMemberS{Value: tx.Timestamp.Format(time.RFC3339Nano)},
+		},
+		UpdateExpression: aws.String("SET #st = :status, flagged_reason = :reason, breach_id = :breach_id"),
+		ExpressionAttributeNames: map[string]string{
+			"#st": "status",
+		},
+		ExpressionAttributeValues: map[string]dynamodbTypes.AttributeValue{
+			":status":   &dynamodbTypes.AttributeValueMemberS{Value: "blocked"},
+			":reason":   &dynamodbTypes.AttributeValueMemberS{Value: "risk_limit_exceeded"},
+			":breach_id": &dynamodbTypes.AttributeValueMemberS{Value: breachID},
+		},
+	})
+	return err
 }
 
 // publishBreach serialises the RiskBreach and sends it to SNS.

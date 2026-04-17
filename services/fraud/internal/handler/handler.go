@@ -108,15 +108,15 @@ func (h *Handler) flagTransaction(ctx context.Context, tx events.TransactionEven
 			"transaction_id": &dynamodbTypes.AttributeValueMemberS{Value: tx.TransactionID},
 			"timestamp":      &dynamodbTypes.AttributeValueMemberS{Value: tx.Timestamp.Format(time.RFC3339Nano)},
 		},
-		UpdateExpression: aws.String("SET #st = :status, alert_id = :alert_id, severity = :severity, fraud_reason = :reason"),
+		UpdateExpression: aws.String("SET #st = :status, flagged_reason = :reason, alert_id = :alert_id, severity = :severity"),
 		ExpressionAttributeNames: map[string]string{
 			"#st": "status",
 		},
 		ExpressionAttributeValues: map[string]dynamodbTypes.AttributeValue{
 			":status":   &dynamodbTypes.AttributeValueMemberS{Value: "flagged"},
+			":reason":   &dynamodbTypes.AttributeValueMemberS{Value: "fraud_detected"},
 			":alert_id": &dynamodbTypes.AttributeValueMemberS{Value: alert.AlertID},
 			":severity": &dynamodbTypes.AttributeValueMemberS{Value: string(alert.Severity)},
-			":reason":   &dynamodbTypes.AttributeValueMemberS{Value: alert.Reason},
 		},
 	})
 	return err

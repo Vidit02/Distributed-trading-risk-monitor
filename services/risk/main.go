@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/redis/go-redis/v9"
@@ -23,6 +24,7 @@ func main() {
 
 	queueURL := requireEnv("HIGH_PRIORITY_QUEUE_URL")
 	riskBreachTopicARN := requireEnv("RISK_BREACH_TOPIC_ARN")
+	dynamoTableName := requireEnv("DYNAMODB_TABLE_NAME")
 	redisAddr := requireEnv("REDIS_ADDR")
 
 	// Sync mode controls how writes propagate across regions.
@@ -66,12 +68,15 @@ func main() {
 
 	sqsClient := sqs.NewFromConfig(awsCfg)
 	snsClient := sns.NewFromConfig(awsCfg)
+	dynamoClient := dynamodb.NewFromConfig(awsCfg)
 
 	h := handler.NewWithSync(
 		redisClient,
 		redisSecondary,
 		snsClient,
 		riskBreachTopicARN,
+		dynamoClient,
+		dynamoTableName,
 		dailyLimit,
 		syncMode,
 		regionLabel,

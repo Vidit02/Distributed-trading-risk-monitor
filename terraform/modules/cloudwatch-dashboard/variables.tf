@@ -38,6 +38,21 @@ variable "audit_logging_service_name" {
   type        = string
 }
 
+variable "compliance_service_name" {
+  description = "ECS service name for the compliance service"
+  type        = string
+}
+
+variable "alert_service_name" {
+  description = "ECS service name for the alert service"
+  type        = string
+}
+
+variable "manual_review_service_name" {
+  description = "ECS service name for the manual-review service"
+  type        = string
+}
+
 variable "alb_arn" {
   description = "Full ARN of the ALB, used to extract the LoadBalancer dimension for CloudWatch metrics"
   type        = string
