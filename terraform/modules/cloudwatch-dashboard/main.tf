@@ -1,13 +1,18 @@
 locals {
-  # CloudWatch needs just the part after "loadbalancer/" in the ARN as the LoadBalancer dimension
-  # e.g. arn:aws:...:loadbalancer/app/project-alb/abc123 becomes app/project-alb/abc123
   alb_suffix = regex("loadbalancer/(.*)", var.alb_arn)[0]
 
-  # These match the queue names created in the sqs module
-  high_priority_queue_name = "${var.project}-high-priority"
-  low_priority_queue_name  = "${var.project}-low-priority"
-  high_priority_dlq_name   = "${var.project}-high-priority-dlq"
-  low_priority_dlq_name    = "${var.project}-low-priority-dlq"
+  # Per-service queue + DLQ names (SNS fan-out — one queue per consumer)
+  fraud_queue_name         = "${var.project}-fraud"
+  risk_queue_name          = "${var.project}-risk"
+  compliance_queue_name    = "${var.project}-compliance"
+  analytics_queue_name     = "${var.project}-analytics"
+  audit_logging_queue_name = "${var.project}-audit-logging"
+
+  fraud_dlq_name         = "${var.project}-fraud-dlq"
+  risk_dlq_name          = "${var.project}-risk-dlq"
+  compliance_dlq_name    = "${var.project}-compliance-dlq"
+  analytics_dlq_name     = "${var.project}-analytics-dlq"
+  audit_logging_dlq_name = "${var.project}-audit-logging-dlq"
 }
 
 resource "aws_cloudwatch_dashboard" "main" {
@@ -36,18 +41,18 @@ resource "aws_cloudwatch_dashboard" "main" {
         width  = 12
         height = 6
         properties = {
-          title   = "Main Queue Depth"
+          title   = "Per-Service Queue Depth"
           view    = "timeSeries"
           stacked = false
+          region  = var.aws_region
           period  = 60
           stat    = "Average"
           metrics = [
-            ["AWS/SQS", "ApproximateNumberOfMessagesVisible",
-              "QueueName", local.high_priority_queue_name,
-            { label = "High Priority", color = "#d13212" }],
-            ["AWS/SQS", "ApproximateNumberOfMessagesVisible",
-              "QueueName", local.low_priority_queue_name,
-            { label = "Low Priority", color = "#1f77b4" }]
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", local.fraud_queue_name, { label = "fraud" }],
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", local.risk_queue_name, { label = "risk" }],
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", local.compliance_queue_name, { label = "compliance" }],
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", local.analytics_queue_name, { label = "analytics" }],
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", local.audit_logging_queue_name, { label = "audit-logging" }]
           ]
           yAxis = { left = { min = 0, label = "Messages" } }
         }
@@ -60,18 +65,18 @@ resource "aws_cloudwatch_dashboard" "main" {
         width  = 12
         height = 6
         properties = {
-          title   = "Dead-Letter Queue Depth"
+          title   = "Per-Service DLQ Depth"
           view    = "timeSeries"
           stacked = false
+          region  = var.aws_region
           period  = 60
           stat    = "Average"
           metrics = [
-            ["AWS/SQS", "ApproximateNumberOfMessagesVisible",
-              "QueueName", local.high_priority_dlq_name,
-            { label = "High Priority DLQ", color = "#d13212" }],
-            ["AWS/SQS", "ApproximateNumberOfMessagesVisible",
-              "QueueName", local.low_priority_dlq_name,
-            { label = "Low Priority DLQ", color = "#ff7f0e" }]
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", local.fraud_dlq_name, { label = "fraud DLQ" }],
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", local.risk_dlq_name, { label = "risk DLQ" }],
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", local.compliance_dlq_name, { label = "compliance DLQ" }],
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", local.analytics_dlq_name, { label = "analytics DLQ" }],
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", local.audit_logging_dlq_name, { label = "audit-logging DLQ" }]
           ]
           yAxis = { left = { min = 0, label = "Messages" } }
         }
@@ -97,18 +102,18 @@ resource "aws_cloudwatch_dashboard" "main" {
         width  = 12
         height = 6
         properties = {
-          title   = "Queue Processing Latency (Oldest Message Age)"
+          title   = "Oldest Message Age (per service)"
           view    = "timeSeries"
           stacked = false
+          region  = var.aws_region
           period  = 60
           stat    = "Average"
           metrics = [
-            ["AWS/SQS", "ApproximateAgeOfOldestMessage",
-              "QueueName", local.high_priority_queue_name,
-            { label = "High Priority", color = "#d13212" }],
-            ["AWS/SQS", "ApproximateAgeOfOldestMessage",
-              "QueueName", local.low_priority_queue_name,
-            { label = "Low Priority", color = "#1f77b4" }]
+            ["AWS/SQS", "ApproximateAgeOfOldestMessage", "QueueName", local.fraud_queue_name, { label = "fraud" }],
+            ["AWS/SQS", "ApproximateAgeOfOldestMessage", "QueueName", local.risk_queue_name, { label = "risk" }],
+            ["AWS/SQS", "ApproximateAgeOfOldestMessage", "QueueName", local.compliance_queue_name, { label = "compliance" }],
+            ["AWS/SQS", "ApproximateAgeOfOldestMessage", "QueueName", local.analytics_queue_name, { label = "analytics" }],
+            ["AWS/SQS", "ApproximateAgeOfOldestMessage", "QueueName", local.audit_logging_queue_name, { label = "audit-logging" }]
           ]
           yAxis = { left = { min = 0, label = "Seconds" } }
         }
@@ -124,6 +129,7 @@ resource "aws_cloudwatch_dashboard" "main" {
           title   = "Transaction Service Response Time (ALB)"
           view    = "timeSeries"
           stacked = false
+          region  = var.aws_region
           period  = 60
           metrics = [
             ["AWS/ApplicationELB", "TargetResponseTime",
@@ -163,6 +169,7 @@ resource "aws_cloudwatch_dashboard" "main" {
           title   = "ALB HTTP Error Rates"
           view    = "timeSeries"
           stacked = false
+          region  = var.aws_region
           period  = 60
           stat    = "Sum"
           metrics = [
@@ -187,18 +194,18 @@ resource "aws_cloudwatch_dashboard" "main" {
         width  = 12
         height = 6
         properties = {
-          title   = "SQS Message Processing Failures (DLQ rate)"
+          title   = "Messages Sent to DLQs (processing failures)"
           view    = "timeSeries"
           stacked = false
+          region  = var.aws_region
           period  = 60
           stat    = "Sum"
           metrics = [
-            ["AWS/SQS", "NumberOfMessagesSent",
-              "QueueName", local.high_priority_dlq_name,
-            { label = "Sent to High DLQ", color = "#d13212" }],
-            ["AWS/SQS", "NumberOfMessagesSent",
-              "QueueName", local.low_priority_dlq_name,
-            { label = "Sent to Low DLQ", color = "#ff7f0e" }]
+            ["AWS/SQS", "NumberOfMessagesSent", "QueueName", local.fraud_dlq_name, { label = "fraud DLQ" }],
+            ["AWS/SQS", "NumberOfMessagesSent", "QueueName", local.risk_dlq_name, { label = "risk DLQ" }],
+            ["AWS/SQS", "NumberOfMessagesSent", "QueueName", local.compliance_dlq_name, { label = "compliance DLQ" }],
+            ["AWS/SQS", "NumberOfMessagesSent", "QueueName", local.analytics_dlq_name, { label = "analytics DLQ" }],
+            ["AWS/SQS", "NumberOfMessagesSent", "QueueName", local.audit_logging_dlq_name, { label = "audit-logging DLQ" }]
           ]
           yAxis = { left = { min = 0, label = "Messages" } }
         }
@@ -227,6 +234,7 @@ resource "aws_cloudwatch_dashboard" "main" {
           title   = "Running Tasks per Service"
           view    = "timeSeries"
           stacked = false
+          region  = var.aws_region
           period  = 60
           stat    = "Average"
           metrics = [
@@ -275,18 +283,18 @@ resource "aws_cloudwatch_dashboard" "main" {
         width  = 12
         height = 6
         properties = {
-          title   = "Messages Sent to Queues"
+          title   = "Messages Sent to Queues (per service)"
           view    = "timeSeries"
           stacked = false
+          region  = var.aws_region
           period  = 60
           stat    = "Sum"
           metrics = [
-            ["AWS/SQS", "NumberOfMessagesSent",
-              "QueueName", local.high_priority_queue_name,
-            { label = "High Priority", color = "#d13212" }],
-            ["AWS/SQS", "NumberOfMessagesSent",
-              "QueueName", local.low_priority_queue_name,
-            { label = "Low Priority", color = "#1f77b4" }]
+            ["AWS/SQS", "NumberOfMessagesSent", "QueueName", local.fraud_queue_name, { label = "fraud" }],
+            ["AWS/SQS", "NumberOfMessagesSent", "QueueName", local.risk_queue_name, { label = "risk" }],
+            ["AWS/SQS", "NumberOfMessagesSent", "QueueName", local.compliance_queue_name, { label = "compliance" }],
+            ["AWS/SQS", "NumberOfMessagesSent", "QueueName", local.analytics_queue_name, { label = "analytics" }],
+            ["AWS/SQS", "NumberOfMessagesSent", "QueueName", local.audit_logging_queue_name, { label = "audit-logging" }]
           ]
           yAxis = { left = { min = 0, label = "Messages" } }
         }
@@ -299,18 +307,18 @@ resource "aws_cloudwatch_dashboard" "main" {
         width  = 12
         height = 6
         properties = {
-          title   = "Messages Deleted (Successfully Processed)"
+          title   = "Messages Deleted / Successfully Processed (per service)"
           view    = "timeSeries"
           stacked = false
+          region  = var.aws_region
           period  = 60
           stat    = "Sum"
           metrics = [
-            ["AWS/SQS", "NumberOfMessagesDeleted",
-              "QueueName", local.high_priority_queue_name,
-            { label = "High Priority", color = "#2ca02c" }],
-            ["AWS/SQS", "NumberOfMessagesDeleted",
-              "QueueName", local.low_priority_queue_name,
-            { label = "Low Priority", color = "#17becf" }]
+            ["AWS/SQS", "NumberOfMessagesDeleted", "QueueName", local.fraud_queue_name, { label = "fraud" }],
+            ["AWS/SQS", "NumberOfMessagesDeleted", "QueueName", local.risk_queue_name, { label = "risk" }],
+            ["AWS/SQS", "NumberOfMessagesDeleted", "QueueName", local.compliance_queue_name, { label = "compliance" }],
+            ["AWS/SQS", "NumberOfMessagesDeleted", "QueueName", local.analytics_queue_name, { label = "analytics" }],
+            ["AWS/SQS", "NumberOfMessagesDeleted", "QueueName", local.audit_logging_queue_name, { label = "audit-logging" }]
           ]
           yAxis = { left = { min = 0, label = "Messages" } }
         }

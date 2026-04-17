@@ -66,25 +66,40 @@ output "sns_risk_breach_events_arn" {
   value       = module.sns.risk_breach_events_arn
 }
 
-# SQS outputs
-output "sqs_high_priority_url" {
-  description = "URL of the high-priority SQS queue"
-  value       = module.sqs.high_priority_queue_url
+# SQS outputs — one queue per service (SNS fan-out)
+output "sqs_fraud_url" {
+  description = "URL of the fraud service SQS queue"
+  value       = module.sqs.fraud_queue_url
 }
 
-output "sqs_high_priority_arn" {
-  description = "ARN of the high-priority SQS queue"
-  value       = module.sqs.high_priority_queue_arn
+output "sqs_risk_url" {
+  description = "URL of the risk service SQS queue"
+  value       = module.sqs.risk_queue_url
 }
 
-output "sqs_low_priority_url" {
-  description = "URL of the low-priority SQS queue"
-  value       = module.sqs.low_priority_queue_url
+output "sqs_compliance_url" {
+  description = "URL of the compliance service SQS queue"
+  value       = module.sqs.compliance_queue_url
 }
 
-output "sqs_low_priority_arn" {
-  description = "ARN of the low-priority SQS queue"
-  value       = module.sqs.low_priority_queue_arn
+output "sqs_analytics_url" {
+  description = "URL of the analytics service SQS queue"
+  value       = module.sqs.analytics_queue_url
+}
+
+output "sqs_audit_logging_url" {
+  description = "URL of the audit-logging service SQS queue"
+  value       = module.sqs.audit_logging_queue_url
+}
+
+output "sqs_alert_url" {
+  description = "URL of the alert SQS queue"
+  value       = module.sqs.alert_queue_url
+}
+
+output "sqs_fraud_dlq_url" {
+  description = "URL of the fraud DLQ (consumed by manual-review)"
+  value       = module.sqs.fraud_dlq_url
 }
 
 # DynamoDB outputs
@@ -123,6 +138,17 @@ output "redis_reader_endpoint" {
 output "redis_port" {
   description = "Port Redis is listening on"
   value       = module.redis.redis_port
+}
+
+# Redis Replica (us-east-1) outputs
+output "redis_east_primary_endpoint" {
+  description = "Primary endpoint for the us-east-1 Redis replica"
+  value       = module.redis_replica.redis_east_primary_endpoint
+}
+
+output "redis_east_port" {
+  description = "Port the us-east-1 Redis replica is listening on"
+  value       = module.redis_replica.redis_east_port
 }
 
 # ALB outputs
