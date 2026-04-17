@@ -45,6 +45,39 @@ variable "manual_review_service_name" {
   type        = string
 }
 
+variable "transaction_service_name" {
+  description = "ECS service name for the transaction service"
+  type        = string
+}
+
+variable "alb_arn" {
+  description = "Full ARN of the ALB — used to build the ALBRequestCountPerTarget resource label"
+  type        = string
+}
+
+variable "alb_target_group_arn" {
+  description = "Full ARN of the transaction service ALB target group"
+  type        = string
+}
+
+variable "transaction_min_capacity" {
+  description = "Minimum number of tasks for the transaction service"
+  type        = number
+  default     = 1
+}
+
+variable "transaction_max_capacity" {
+  description = "Maximum number of tasks for the transaction service"
+  type        = number
+  default     = 5
+}
+
+variable "transaction_requests_per_target" {
+  description = "ALB requests per target that triggers scale-out for the transaction service"
+  type        = number
+  default     = 100
+}
+
 # Queue ARNs
 
 variable "high_priority_queue_arn" {

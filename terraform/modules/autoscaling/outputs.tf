@@ -45,3 +45,8 @@ output "manual_review_scale_in_policy_arn" {
   description = "ARN of the scale-in policy for the manual-review service"
   value       = aws_appautoscaling_policy.manual_review_scale_in.arn
 }
+
+output "transaction_scaling_policy_arn" {
+  description = "ARN of the target-tracking scaling policy for the transaction service"
+  value       = aws_appautoscaling_policy.transaction.arn
+}

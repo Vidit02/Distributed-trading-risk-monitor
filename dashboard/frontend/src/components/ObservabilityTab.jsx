@@ -59,9 +59,10 @@ export default function ObservabilityTab() {
 
   // Rolling queue depth history for the bar chart
   const [queueHistory, setQueueHistory] = useState({
-    labels:   [],
-    high: [],
-    low:  [],
+    labels: [],
+    high:   [],
+    low:    [],
+    alert:  [],
   })
 
   const fetchMetrics = async () => {
@@ -75,9 +76,10 @@ export default function ObservabilityTab() {
       const label = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
       setQueueHistory(prev => {
         const labels = [...prev.labels, label].slice(-MAX_POINTS)
-        const high   = [...prev.high,   data.high_queue_depth].slice(-MAX_POINTS)
-        const low    = [...prev.low,    data.low_queue_depth].slice(-MAX_POINTS)
-        return { labels, high, low }
+        const high   = [...prev.high,   data.high_queue_depth  ?? 0].slice(-MAX_POINTS)
+        const low    = [...prev.low,    data.low_queue_depth   ?? 0].slice(-MAX_POINTS)
+        const alert  = [...prev.alert,  data.alert_queue_depth ?? 0].slice(-MAX_POINTS)
+        return { labels, high, low, alert }
       })
     } catch (_) {}
   }
@@ -116,7 +118,12 @@ export default function ObservabilityTab() {
       {
         label: 'Low priority',
         data: queueHistory.low,
-        backgroundColor: 'rgba(239,68,68,0.7)',
+        backgroundColor: 'rgba(139,92,246,0.7)',
+      },
+      {
+        label: 'Alert',
+        data: queueHistory.alert,
+        backgroundColor: 'rgba(245,158,11,0.7)',
       },
     ],
   }

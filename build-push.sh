@@ -6,7 +6,7 @@ set -euo pipefail
 
 REGION="us-west-2"
 CLUSTER="trading-risk-monitor-cluster"
-SERVICES=("transaction" "fraud" "risk" "analytics" "audit-logging")
+SERVICES=("transaction" "fraud" "risk" "analytics" "audit-logging" "alert" "compliance" "manual-review")
 
 echo "==> Fetching AWS account ID"
 AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)

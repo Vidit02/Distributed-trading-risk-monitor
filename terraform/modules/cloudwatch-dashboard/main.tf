@@ -8,6 +8,8 @@ locals {
   low_priority_queue_name  = "${var.project}-low-priority"
   high_priority_dlq_name   = "${var.project}-high-priority-dlq"
   low_priority_dlq_name    = "${var.project}-low-priority-dlq"
+  alert_queue_name         = "${var.project}-alert"
+  alert_dlq_name           = "${var.project}-alert-dlq"
 }
 
 resource "aws_cloudwatch_dashboard" "main" {
@@ -37,6 +39,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         height = 6
         properties = {
           title   = "Main Queue Depth"
+          region  = var.aws_region
           view    = "timeSeries"
           stacked = false
           period  = 60
@@ -61,6 +64,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         height = 6
         properties = {
           title   = "Dead-Letter Queue Depth"
+          region  = var.aws_region
           view    = "timeSeries"
           stacked = false
           period  = 60
@@ -98,6 +102,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         height = 6
         properties = {
           title   = "Queue Processing Latency (Oldest Message Age)"
+          region  = var.aws_region
           view    = "timeSeries"
           stacked = false
           period  = 60
@@ -122,6 +127,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         height = 6
         properties = {
           title   = "Transaction Service Response Time (ALB)"
+          region  = var.aws_region
           view    = "timeSeries"
           stacked = false
           period  = 60
@@ -161,6 +167,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         height = 6
         properties = {
           title   = "ALB HTTP Error Rates"
+          region  = var.aws_region
           view    = "timeSeries"
           stacked = false
           period  = 60
@@ -188,6 +195,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         height = 6
         properties = {
           title   = "SQS Message Processing Failures (DLQ rate)"
+          region  = var.aws_region
           view    = "timeSeries"
           stacked = false
           period  = 60
@@ -225,6 +233,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         height = 6
         properties = {
           title   = "Running Tasks per Service"
+          region  = var.aws_region
           view    = "timeSeries"
           stacked = false
           period  = 60
@@ -233,23 +242,35 @@ resource "aws_cloudwatch_dashboard" "main" {
             ["ECS/ContainerInsights", "RunningTaskCount",
               "ClusterName", var.cluster_name,
               "ServiceName", var.transaction_service_name,
-            { label = "transaction" }],
+            { label = "transaction", color = "#2ca02c" }],
             ["ECS/ContainerInsights", "RunningTaskCount",
               "ClusterName", var.cluster_name,
               "ServiceName", var.fraud_service_name,
-            { label = "fraud" }],
+            { label = "fraud", color = "#d13212" }],
             ["ECS/ContainerInsights", "RunningTaskCount",
               "ClusterName", var.cluster_name,
               "ServiceName", var.risk_service_name,
-            { label = "risk" }],
+            { label = "risk", color = "#ff7f0e" }],
+            ["ECS/ContainerInsights", "RunningTaskCount",
+              "ClusterName", var.cluster_name,
+              "ServiceName", var.compliance_service_name,
+            { label = "compliance", color = "#9467bd" }],
             ["ECS/ContainerInsights", "RunningTaskCount",
               "ClusterName", var.cluster_name,
               "ServiceName", var.analytics_service_name,
-            { label = "analytics" }],
+            { label = "analytics", color = "#1f77b4" }],
             ["ECS/ContainerInsights", "RunningTaskCount",
               "ClusterName", var.cluster_name,
               "ServiceName", var.audit_logging_service_name,
-            { label = "audit-logging" }]
+            { label = "audit-logging", color = "#17becf" }],
+            ["ECS/ContainerInsights", "RunningTaskCount",
+              "ClusterName", var.cluster_name,
+              "ServiceName", var.alert_service_name,
+            { label = "alert", color = "#f59e0b" }],
+            ["ECS/ContainerInsights", "RunningTaskCount",
+              "ClusterName", var.cluster_name,
+              "ServiceName", var.manual_review_service_name,
+            { label = "manual-review", color = "#e377c2" }]
           ]
           yAxis = { left = { min = 0, label = "Tasks" } }
         }
@@ -276,6 +297,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         height = 6
         properties = {
           title   = "Messages Sent to Queues"
+          region  = var.aws_region
           view    = "timeSeries"
           stacked = false
           period  = 60
@@ -300,6 +322,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         height = 6
         properties = {
           title   = "Messages Deleted (Successfully Processed)"
+          region  = var.aws_region
           view    = "timeSeries"
           stacked = false
           period  = 60
@@ -310,9 +333,174 @@ resource "aws_cloudwatch_dashboard" "main" {
             { label = "High Priority", color = "#2ca02c" }],
             ["AWS/SQS", "NumberOfMessagesDeleted",
               "QueueName", local.low_priority_queue_name,
-            { label = "Low Priority", color = "#17becf" }]
+            { label = "Low Priority", color = "#17becf" }],
+            ["AWS/SQS", "NumberOfMessagesDeleted",
+              "QueueName", local.alert_queue_name,
+            { label = "Alert", color = "#f59e0b" }]
           ]
           yAxis = { left = { min = 0, label = "Messages" } }
+        }
+      },
+
+      # Row 6: Autoscaling
+
+      {
+        type   = "text"
+        x      = 0
+        y      = 35
+        width  = 24
+        height = 1
+        properties = {
+          markdown = "## Autoscaling"
+        }
+      },
+
+      # Desired vs Running: shows when the autoscaler fires (desired jumps first, running follows)
+      {
+        type   = "metric"
+        x      = 0
+        y      = 36
+        width  = 12
+        height = 6
+        properties = {
+          title   = "Desired vs Running Tasks — High-Priority Services"
+          region  = var.aws_region
+          view    = "timeSeries"
+          stacked = false
+          period  = 60
+          stat    = "Average"
+          metrics = [
+            ["ECS/ContainerInsights", "DesiredTaskCount",
+              "ClusterName", var.cluster_name,
+              "ServiceName", var.fraud_service_name,
+            { label = "fraud desired", color = "#d13212" }],
+            ["ECS/ContainerInsights", "RunningTaskCount",
+              "ClusterName", var.cluster_name,
+              "ServiceName", var.fraud_service_name,
+            { label = "fraud running", color = "#d13212", id = "fr" }],
+            ["ECS/ContainerInsights", "DesiredTaskCount",
+              "ClusterName", var.cluster_name,
+              "ServiceName", var.risk_service_name,
+            { label = "risk desired", color = "#ff7f0e" }],
+            ["ECS/ContainerInsights", "RunningTaskCount",
+              "ClusterName", var.cluster_name,
+              "ServiceName", var.risk_service_name,
+            { label = "risk running", color = "#ff7f0e" }],
+            ["ECS/ContainerInsights", "DesiredTaskCount",
+              "ClusterName", var.cluster_name,
+              "ServiceName", var.compliance_service_name,
+            { label = "compliance desired", color = "#9467bd" }],
+            ["ECS/ContainerInsights", "RunningTaskCount",
+              "ClusterName", var.cluster_name,
+              "ServiceName", var.compliance_service_name,
+            { label = "compliance running", color = "#9467bd" }]
+          ]
+          yAxis = { left = { min = 0, label = "Tasks" } }
+        }
+      },
+
+      # High-priority queue depth alongside task count — the trigger and the response on one chart
+      {
+        type   = "metric"
+        x      = 12
+        y      = 36
+        width  = 12
+        height = 6
+        properties = {
+          title   = "High-Priority Queue Depth vs Scaled Task Count"
+          region  = var.aws_region
+          view    = "timeSeries"
+          stacked = false
+          period  = 60
+          stat    = "Average"
+          metrics = [
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible",
+              "QueueName", local.high_priority_queue_name,
+            { label = "Queue depth (msgs)", color = "#1f77b4" }],
+            ["ECS/ContainerInsights", "DesiredTaskCount",
+              "ClusterName", var.cluster_name,
+              "ServiceName", var.fraud_service_name,
+            { label = "fraud desired tasks", color = "#d13212" }],
+            ["ECS/ContainerInsights", "DesiredTaskCount",
+              "ClusterName", var.cluster_name,
+              "ServiceName", var.risk_service_name,
+            { label = "risk desired tasks", color = "#ff7f0e" }],
+            ["ECS/ContainerInsights", "DesiredTaskCount",
+              "ClusterName", var.cluster_name,
+              "ServiceName", var.compliance_service_name,
+            { label = "compliance desired tasks", color = "#9467bd" }]
+          ]
+          yAxis = { left = { min = 0, label = "Count" } }
+        }
+      },
+
+      # Alert service autoscaling — desired vs running, and alert queue depth
+      {
+        type   = "metric"
+        x      = 0
+        y      = 42
+        width  = 12
+        height = 6
+        properties = {
+          title   = "Desired vs Running Tasks — Alert & Manual Review"
+          region  = var.aws_region
+          view    = "timeSeries"
+          stacked = false
+          period  = 60
+          stat    = "Average"
+          metrics = [
+            ["ECS/ContainerInsights", "DesiredTaskCount",
+              "ClusterName", var.cluster_name,
+              "ServiceName", var.alert_service_name,
+            { label = "alert desired", color = "#f59e0b" }],
+            ["ECS/ContainerInsights", "RunningTaskCount",
+              "ClusterName", var.cluster_name,
+              "ServiceName", var.alert_service_name,
+            { label = "alert running", color = "#f59e0b" }],
+            ["ECS/ContainerInsights", "DesiredTaskCount",
+              "ClusterName", var.cluster_name,
+              "ServiceName", var.manual_review_service_name,
+            { label = "manual-review desired", color = "#e377c2" }],
+            ["ECS/ContainerInsights", "RunningTaskCount",
+              "ClusterName", var.cluster_name,
+              "ServiceName", var.manual_review_service_name,
+            { label = "manual-review running", color = "#e377c2" }]
+          ]
+          yAxis = { left = { min = 0, label = "Tasks" } }
+        }
+      },
+
+      # Alert queue depth vs alert service task count — trigger + response
+      {
+        type   = "metric"
+        x      = 12
+        y      = 42
+        width  = 12
+        height = 6
+        properties = {
+          title   = "Alert Queue Depth vs Alert Task Count"
+          region  = var.aws_region
+          view    = "timeSeries"
+          stacked = false
+          period  = 60
+          stat    = "Average"
+          metrics = [
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible",
+              "QueueName", local.alert_queue_name,
+            { label = "Alert queue depth", color = "#f59e0b" }],
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible",
+              "QueueName", local.high_priority_dlq_name,
+            { label = "High-priority DLQ depth", color = "#e377c2" }],
+            ["ECS/ContainerInsights", "DesiredTaskCount",
+              "ClusterName", var.cluster_name,
+              "ServiceName", var.alert_service_name,
+            { label = "alert desired tasks", color = "#d4730a" }],
+            ["ECS/ContainerInsights", "DesiredTaskCount",
+              "ClusterName", var.cluster_name,
+              "ServiceName", var.manual_review_service_name,
+            { label = "manual-review desired tasks", color = "#b5569a" }]
+          ]
+          yAxis = { left = { min = 0, label = "Count" } }
         }
       }
 

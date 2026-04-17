@@ -48,14 +48,3 @@ variable "low_priority_max_receive_count" {
   default     = 5
 }
 
-variable "fraud_alert_topic_arn" {
-  description = "ARN of the fraud-alert-events SNS topic (subscribed by alert queue)"
-  type        = string
-  default     = ""
-}
-
-variable "risk_breach_topic_arn" {
-  description = "ARN of the risk-breach-events SNS topic (subscribed by alert queue)"
-  type        = string
-  default     = ""
-}

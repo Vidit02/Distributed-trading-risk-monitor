@@ -54,11 +54,6 @@ module "sqs" {
   sns_topic_arn       = module.sns.transaction_events_arn
   sns_fraud_alert_arn = module.sns.fraud_alert_events_arn
   sns_risk_breach_arn = module.sns.risk_breach_events_arn
-  project       = var.project
-  sns_topic_arn = module.sns.transaction_events_arn
-
-  fraud_alert_topic_arn = module.sns.fraud_alert_events_arn
-  risk_breach_topic_arn = module.sns.risk_breach_events_arn
 }
 
 
@@ -112,6 +107,7 @@ module "autoscaling" {
   project      = var.project
   cluster_name = module.ecs_cluster.cluster_name
 
+  transaction_service_name   = module.ecs_services.transaction_service_name
   fraud_service_name         = module.ecs_services.fraud_service_name
   risk_service_name          = module.ecs_services.risk_service_name
   analytics_service_name     = module.ecs_services.analytics_service_name
@@ -119,6 +115,9 @@ module "autoscaling" {
   compliance_service_name    = "${var.project}-compliance"
   alert_service_name         = "${var.project}-alert"
   manual_review_service_name = "${var.project}-manual-review"
+
+  alb_arn              = module.alb.alb_arn
+  alb_target_group_arn = module.alb.transaction_target_group_arn
 
   high_priority_queue_arn = module.sqs.high_priority_queue_arn
   low_priority_queue_arn  = module.sqs.low_priority_queue_arn
@@ -139,6 +138,9 @@ module "cloudwatch_dashboard" {
   risk_service_name          = module.ecs_services.risk_service_name
   analytics_service_name     = module.ecs_services.analytics_service_name
   audit_logging_service_name = module.ecs_services.audit_logging_service_name
+  compliance_service_name    = "${var.project}-compliance"
+  alert_service_name         = "${var.project}-alert"
+  manual_review_service_name = "${var.project}-manual-review"
 
   alb_arn = module.alb.alb_arn
 }

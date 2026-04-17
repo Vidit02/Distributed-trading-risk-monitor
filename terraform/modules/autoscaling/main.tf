@@ -9,6 +9,11 @@ locals {
   alert_queue_name         = element(split(":", var.alert_queue_arn), 5)
   high_priority_dlq_name   = element(split(":", var.high_priority_dlq_arn), 5)
 
+  # ALBRequestCountPerTarget resource_label = "{alb_suffix}/{tg_suffix}"
+  # e.g. app/trading-risk-monitor-alb/abc123/targetgroup/trading-risk-monitor-transaction/def456
+  alb_suffix    = regex("loadbalancer/(.*)", var.alb_arn)[0]
+  alb_tg_suffix = regex("(targetgroup/.+)$", var.alb_target_group_arn)[0]
+
   high_priority_services = {
     fraud      = var.fraud_service_name
     risk       = var.risk_service_name
@@ -431,4 +436,40 @@ resource "aws_cloudwatch_metric_alarm" "manual_review_scale_in" {
   }
 
   alarm_actions = [aws_appautoscaling_policy.manual_review_scale_in.arn]
+}
+
+# ---------------------------------------------------------------------------
+# Transaction service — TargetTrackingScaling on ALBRequestCountPerTarget
+#
+# When each running task is handling more than 100 req/s, ECS adds tasks.
+# AWS automatically creates the corresponding scale-in policy.
+# scale_out_cooldown = 60s  — react quickly to traffic spikes
+# scale_in_cooldown  = 120s — avoid thrashing after a burst drains
+# ---------------------------------------------------------------------------
+
+resource "aws_appautoscaling_target" "transaction" {
+  max_capacity       = var.transaction_max_capacity
+  min_capacity       = var.transaction_min_capacity
+  resource_id        = "service/${var.cluster_name}/${var.transaction_service_name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+resource "aws_appautoscaling_policy" "transaction" {
+  name               = "${var.transaction_service_name}-alb-target-tracking"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.transaction.resource_id
+  scalable_dimension = aws_appautoscaling_target.transaction.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.transaction.service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    target_value       = var.transaction_requests_per_target
+    scale_out_cooldown = 60
+    scale_in_cooldown  = 120
+
+    predefined_metric_specification {
+      predefined_metric_type = "ALBRequestCountPerTarget"
+      resource_label         = "${local.alb_suffix}/${local.alb_tg_suffix}"
+    }
+  }
 }
