@@ -20,6 +20,19 @@ provider "aws" {
   }
 }
 
+# Secondary region — hosts the us-east-1 Redis replica.
+provider "aws" {
+  alias  = "east"
+  region = "us-east-1"
+
+  default_tags {
+    tags = {
+      Project   = var.project
+      ManagedBy = "terraform"
+    }
+  }
+}
+
 module "vpc" {
   source = "./modules/vpc"
 
@@ -54,11 +67,6 @@ module "sqs" {
   sns_topic_arn       = module.sns.transaction_events_arn
   sns_fraud_alert_arn = module.sns.fraud_alert_events_arn
   sns_risk_breach_arn = module.sns.risk_breach_events_arn
-  project       = var.project
-  sns_topic_arn = module.sns.transaction_events_arn
-
-  fraud_alert_topic_arn = module.sns.fraud_alert_events_arn
-  risk_breach_topic_arn = module.sns.risk_breach_events_arn
 }
 
 
@@ -120,10 +128,13 @@ module "autoscaling" {
   alert_service_name         = "${var.project}-alert"
   manual_review_service_name = "${var.project}-manual-review"
 
-  high_priority_queue_arn = module.sqs.high_priority_queue_arn
-  low_priority_queue_arn  = module.sqs.low_priority_queue_arn
+  fraud_queue_arn         = module.sqs.fraud_queue_arn
+  risk_queue_arn          = module.sqs.risk_queue_arn
+  compliance_queue_arn    = module.sqs.compliance_queue_arn
+  analytics_queue_arn     = module.sqs.analytics_queue_arn
+  audit_logging_queue_arn = module.sqs.audit_logging_queue_arn
   alert_queue_arn         = module.sqs.alert_queue_arn
-  high_priority_dlq_arn   = module.sqs.high_priority_dlq_arn
+  fraud_dlq_arn           = module.sqs.fraud_dlq_arn
 }
 
 # CloudWatch Dashboard — queue depth, latency, errors, task count
@@ -180,11 +191,14 @@ module "ecs_services" {
   sns_risk_breach_events_arn = module.sns.risk_breach_events_arn
   sns_compliance_events_arn  = module.sns.compliance_events_arn
 
-  # SQS
-  high_priority_queue_url = module.sqs.high_priority_queue_url
-  low_priority_queue_url  = module.sqs.low_priority_queue_url
+  # SQS — per-service queues (SNS fan-out)
+  fraud_queue_url         = module.sqs.fraud_queue_url
+  risk_queue_url          = module.sqs.risk_queue_url
+  compliance_queue_url    = module.sqs.compliance_queue_url
+  analytics_queue_url     = module.sqs.analytics_queue_url
+  audit_logging_queue_url = module.sqs.audit_logging_queue_url
   alert_queue_url         = module.sqs.alert_queue_url
-  high_priority_dlq_url   = module.sqs.high_priority_dlq_url
+  fraud_dlq_url           = module.sqs.fraud_dlq_url
 
   # DynamoDB
   dynamodb_table_name = module.dynamodb.transactions_table_name
@@ -195,4 +209,15 @@ module "ecs_services" {
   # Redis
   redis_primary_endpoint = module.redis.redis_primary_endpoint
   redis_port             = module.redis.redis_port
+}
+
+# Redis Replica — isolated ElastiCache cluster in us-east-1
+module "redis_replica" {
+  source = "./modules/redis-replica"
+
+  providers = {
+    aws.east = aws.east
+  }
+
+  project = var.project
 }

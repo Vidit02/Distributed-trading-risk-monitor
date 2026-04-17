@@ -86,7 +86,7 @@ resource "aws_ecs_task_definition" "fraud" {
       essential = true
 
       environment = [
-        { name = "HIGH_PRIORITY_QUEUE_URL", value = var.high_priority_queue_url },
+        { name = "HIGH_PRIORITY_QUEUE_URL", value = var.fraud_queue_url },
         { name = "FRAUD_ALERT_TOPIC_ARN", value = var.sns_fraud_alert_events_arn },
         { name = "DYNAMODB_TABLE_NAME", value = var.dynamodb_table_name },
         { name = "AWS_REGION", value = var.aws_region }
@@ -145,11 +145,14 @@ resource "aws_ecs_task_definition" "risk" {
       essential = true
 
       environment = [
-        { name = "HIGH_PRIORITY_QUEUE_URL", value = var.high_priority_queue_url },
+        { name = "HIGH_PRIORITY_QUEUE_URL", value = var.risk_queue_url },
         { name = "RISK_BREACH_TOPIC_ARN", value = var.sns_risk_breach_events_arn },
         { name = "REDIS_ADDR", value = "${var.redis_primary_endpoint}:${var.redis_port}" },
         { name = "DAILY_LIMIT", value = tostring(var.daily_limit) },
-        { name = "AWS_REGION", value = var.aws_region }
+        { name = "AWS_REGION", value = var.aws_region },
+        { name = "REDIS_SYNC_MODE", value = var.redis_sync_mode },
+        { name = "REDIS_SECONDARY_ADDR", value = var.redis_secondary_addr },
+        { name = "REDIS_REGION_LABEL", value = var.redis_region_label }
       ]
 
       logConfiguration = {
@@ -203,7 +206,7 @@ resource "aws_ecs_task_definition" "analytics" {
       essential = true
 
       environment = [
-        { name = "QUEUE_URL", value = var.low_priority_queue_url },
+        { name = "QUEUE_URL", value = var.analytics_queue_url },
         { name = "AWS_REGION", value = var.aws_region }
       ]
 
@@ -260,7 +263,7 @@ resource "aws_ecs_task_definition" "audit_logging" {
       essential = true
 
       environment = [
-        { name = "QUEUE_URL", value = var.low_priority_queue_url },
+        { name = "QUEUE_URL", value = var.audit_logging_queue_url },
         { name = "S3_BUCKET", value = var.s3_audit_logs_bucket_name },
         { name = "AWS_REGION", value = var.aws_region }
       ]
@@ -318,7 +321,7 @@ resource "aws_ecs_task_definition" "compliance" {
       essential = true
 
       environment = [
-        { name = "HIGH_PRIORITY_QUEUE_URL", value = var.high_priority_queue_url },
+        { name = "HIGH_PRIORITY_QUEUE_URL", value = var.compliance_queue_url },
         { name = "COMPLIANCE_TOPIC_ARN", value = var.sns_compliance_events_arn },
         { name = "AWS_REGION", value = var.aws_region }
       ]
@@ -435,7 +438,7 @@ resource "aws_ecs_task_definition" "manual_review" {
       essential = true
 
       environment = [
-        { name = "DLQ_QUEUE_URL", value = var.high_priority_dlq_url },
+        { name = "DLQ_QUEUE_URL", value = var.fraud_dlq_url },
         { name = "DYNAMODB_TABLE_NAME", value = var.dynamodb_table_name },
         { name = "ALERT_TOPIC_ARN", value = var.sns_fraud_alert_events_arn },
         { name = "AWS_REGION", value = var.aws_region }
