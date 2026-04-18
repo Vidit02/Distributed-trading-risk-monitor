@@ -9,7 +9,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-ALB_DNS="trading-risk-monitor-alb-1978715293.us-west-2.elb.amazonaws.com"
+ALB_DNS="trading-risk-monitor-alb-703965592.us-west-2.elb.amazonaws.com"
 HOST="http://${ALB_DNS}"
 LOCUST_FILE="locust/region_test.py"
 USERS=100

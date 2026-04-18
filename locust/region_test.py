@@ -23,7 +23,7 @@ request_counts = {"west": 0, "east": 0}
 
 FIXED_PAYLOAD = {
     "user_id": "region-test-user-001",
-    "amount": 1000.00,
+    "amount": 10000.00,
     "currency": "USD",
     "merchant_id": "merchant_cap_test",
     "transaction_type": "withdrawal",
