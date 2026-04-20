@@ -17,37 +17,7 @@ A trading risk pipeline fit all three. Every transaction fans out to fraud detec
 
 ## Architecture
 
-```
-POST /transaction (HTTP)
-         │
-         ▼
-  Transaction Service ──► DynamoDB (persistent record)
-         │
-         ▼
-  SNS: transaction-events  (with priority MessageAttribute)
-         │
-   ┌─────┴──────────────────────────────────────┐
-   │  high/critical filter          no filter   │
-   ▼                                            ▼
-fraud-queue   risk-queue   compliance-queue   analytics-queue   audit-logging-queue
-   │               │               │
-   ▼               ▼               ▼
-Fraud Svc      Risk Svc       Compliance Svc
-   │           │   │
-   │      Redis INCRBYFLOAT   (dual-write → us-east-1)
-   │           │
-   ▼           ▼
-SNS: fraud-alert-events                       analytics-queue → Analytics Svc
-SNS: risk-breach-events    ──► alert-queue ──► Alert Svc
-SNS: compliance-events                        audit-logging-queue → Audit Svc → S3
-
-After 3 failed retries (5 for analytics/audit):
-  fraud-dlq ┐
-  risk-dlq  ├──► Manual Review Svc (DynamoDB update + SNS alert)
-  comp-dlq  │
-  analy-dlq │
-  audit-dlq ┘
-```
+![Architecture Diagram](Architecture_Diagram.jpeg)
 
 **8 Go microservices**, all deployed on ECS Fargate, communicating through SNS/SQS fan-out. The dashboard is a React + FastAPI app that shows live queue depths, service health, and lets you inject failures or bulk-submit transactions interactively.
 
