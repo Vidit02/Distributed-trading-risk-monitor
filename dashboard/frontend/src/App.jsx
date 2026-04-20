@@ -3,12 +3,14 @@ import ChaosTab from './components/ChaosTab'
 import ObservabilityTab from './components/ObservabilityTab'
 import SystemStatusTab from './components/SystemStatusTab'
 import TransactionExplorer from './components/TransactionExplorer'
+import BatchUpload from './components/BatchUpload'
 
 const TABS = [
   { id: 'chaos',       label: 'Chaos engineering' },
   { id: 'observe',     label: 'Observability' },
   { id: 'system',      label: 'System status' },
   { id: 'transactions',label: 'Transaction explorer' },
+  { id: 'batch',       label: 'Batch upload' },
 ]
 
 const DEFAULT_STATUS = {
@@ -25,6 +27,8 @@ const DEFAULT_STATUS = {
 export default function App() {
   const [activeTab, setActiveTab] = useState('chaos')
   const [status, setStatus] = useState(DEFAULT_STATUS)
+  const [batchRunning, setBatchRunning] = useState(false)
+  const [batchProgress, setBatchProgress] = useState({ sent: 0, total: 0 })
 
   const fetchStatus = async () => {
     try {
@@ -60,9 +64,30 @@ export default function App() {
                 Trading Risk Monitor
               </span>
             </div>
-            <span className="text-xs" style={{ color: '#4a5568' }}>
-              Auto-refresh every 5s
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              {batchRunning && (
+                <div
+                  onClick={() => setActiveTab('batch')}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    background: '#1e3a5f', border: '1px solid #3b82f6',
+                    borderRadius: 6, padding: '4px 12px', cursor: 'pointer',
+                  }}
+                >
+                  <span style={{
+                    width: 8, height: 8, borderRadius: '50%', background: '#3b82f6',
+                    animation: 'pulse 1.2s infinite',
+                    display: 'inline-block',
+                  }} />
+                  <span style={{ color: '#93c5fd', fontSize: 12 }}>
+                    Batch running — {batchProgress.sent.toLocaleString()} / {batchProgress.total.toLocaleString()}
+                  </span>
+                </div>
+              )}
+              <span className="text-xs" style={{ color: '#4a5568' }}>
+                Auto-refresh every 5s
+              </span>
+            </div>
           </div>
 
           {/* Tab navigation */}
@@ -89,9 +114,10 @@ export default function App() {
         </div>
       </header>
 
-      {/* Tab content */}
+      {/* Tab content — all tabs stay mounted; inactive ones are hidden so
+          long-running operations (e.g. BatchUpload SSE stream) survive tab switches */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {activeTab === 'chaos' && (
+        <div style={{ display: activeTab === 'chaos' ? 'block' : 'none' }}>
           <ChaosTab
             services={status.services}
             highDlqDepth={status.high_dlq_depth}
@@ -103,16 +129,22 @@ export default function App() {
             events={status.events}
             onRefresh={fetchStatus}
           />
-        )}
-        {activeTab === 'observe' && (
+        </div>
+        <div style={{ display: activeTab === 'observe' ? 'block' : 'none' }}>
           <ObservabilityTab services={status.services} />
-        )}
-        {activeTab === 'system' && (
+        </div>
+        <div style={{ display: activeTab === 'system' ? 'block' : 'none' }}>
           <SystemStatusTab services={status.services} />
-        )}
-        {activeTab === 'transactions' && (
+        </div>
+        <div style={{ display: activeTab === 'transactions' ? 'block' : 'none' }}>
           <TransactionExplorer />
-        )}
+        </div>
+        <div style={{ display: activeTab === 'batch' ? 'block' : 'none' }}>
+          <BatchUpload
+            onRunningChange={setBatchRunning}
+            onProgressChange={setBatchProgress}
+          />
+        </div>
       </main>
     </div>
   )

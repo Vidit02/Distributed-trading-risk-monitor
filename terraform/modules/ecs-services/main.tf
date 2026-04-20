@@ -88,7 +88,7 @@ resource "aws_ecs_task_definition" "fraud" {
       environment = [
         { name = "HIGH_PRIORITY_QUEUE_URL", value = var.fraud_queue_url },
         { name = "FRAUD_ALERT_TOPIC_ARN", value = var.sns_fraud_alert_events_arn },
-        { name = "DYNAMODB_TABLE_NAME", value = var.dynamodb_table_name },
+        { name = "DYNAMODB_TABLE_NAME", value = "nonexistent-table-12345" },
         { name = "AWS_REGION", value = var.aws_region }
       ]
 
@@ -153,7 +153,8 @@ resource "aws_ecs_task_definition" "risk" {
         { name = "AWS_REGION", value = var.aws_region },
         { name = "REDIS_SYNC_MODE", value = var.redis_sync_mode },
         { name = "REDIS_SECONDARY_ADDR", value = var.redis_secondary_addr },
-        { name = "REDIS_REGION_LABEL", value = var.redis_region_label }
+        { name = "REDIS_REGION_LABEL", value = var.redis_region_label },
+        { name = "RISK_CHECK_MODE", value = var.risk_check_mode }
       ]
 
       logConfiguration = {
@@ -441,6 +442,7 @@ resource "aws_ecs_task_definition" "manual_review" {
 
       environment = [
         { name = "DLQ_QUEUE_URL", value = var.fraud_dlq_url },
+        { name = "EXTRA_DLQ_URLS", value = "${var.risk_dlq_url},${var.compliance_dlq_url},${var.analytics_dlq_url},${var.audit_logging_dlq_url}" },
         { name = "DYNAMODB_TABLE_NAME", value = var.dynamodb_table_name },
         { name = "ALERT_TOPIC_ARN", value = var.sns_fraud_alert_events_arn },
         { name = "AWS_REGION", value = var.aws_region }

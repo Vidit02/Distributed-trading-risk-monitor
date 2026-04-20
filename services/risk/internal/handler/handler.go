@@ -34,6 +34,19 @@ const (
 	SyncModeDualWrite SyncMode = "dual-write"
 )
 
+// CheckMode controls how the daily-limit check is performed against Redis.
+//   atomic     — uses INCRBYFLOAT: increment and read the new total in one
+//                atomic Redis operation; no race window.
+//   non-atomic — GET current value → sleep 10 ms → compare+SET; deliberately
+//                racy so two concurrent requests can both read the old value,
+//                both pass the limit check, and both be allowed through.
+type CheckMode string
+
+const (
+	CheckModeAtomic    CheckMode = "atomic"
+	CheckModeNonAtomic CheckMode = "non-atomic"
+)
+
 // Handler tracks cumulative user risk exposure in Redis.
 // When a user's daily spend crosses the configured threshold, it publishes
 // a RiskBreach event to SNS and marks the transaction blocked in DynamoDB.
@@ -46,10 +59,11 @@ type Handler struct {
 	tableName      string
 	dailyLimit     float64
 	syncMode       SyncMode
+	checkMode      CheckMode
 	regionLabel    string
 }
 
-// New creates a Handler in single-region mode (no secondary Redis).
+// New creates a Handler in single-region, atomic-check mode.
 // Kept for backwards compatibility with existing callers.
 func New(redisClient *redis.Client, snsClient *sns.Client, topicARN string, dynamoClient *dynamodb.Client, tableName string, dailyLimit float64) *Handler {
 	return &Handler{
@@ -60,11 +74,12 @@ func New(redisClient *redis.Client, snsClient *sns.Client, topicARN string, dyna
 		tableName:   tableName,
 		dailyLimit:  dailyLimit,
 		syncMode:    SyncModeSingle,
+		checkMode:   CheckModeAtomic,
 		regionLabel: "default",
 	}
 }
 
-// NewWithSync creates a Handler that can run in any of the three sync modes.
+// NewWithSync creates a Handler that can run in any sync/check mode combination.
 // redisSecondary is only consulted when syncMode == SyncModeDualWrite; pass nil otherwise.
 func NewWithSync(
 	redisClient *redis.Client,
@@ -75,6 +90,7 @@ func NewWithSync(
 	tableName string,
 	dailyLimit float64,
 	syncMode SyncMode,
+	checkMode CheckMode,
 	regionLabel string,
 ) *Handler {
 	return &Handler{
@@ -86,6 +102,7 @@ func NewWithSync(
 		tableName:      tableName,
 		dailyLimit:     dailyLimit,
 		syncMode:       syncMode,
+		checkMode:      checkMode,
 		regionLabel:    regionLabel,
 	}
 }
@@ -99,15 +116,17 @@ func (h *Handler) Handle(ctx context.Context, body string) error {
 		return nil
 	}
 
-	newTotal, err := h.updateRisk(ctx, tx)
+	prevTotal, newTotal, err := h.updateRisk(ctx, tx)
 	if err != nil {
 		return fmt.Errorf("update risk state: %w", err)
 	}
 
-	log.Printf("[%s] risk: user=%s tx=%s amount=%.2f daily_total=%.2f limit=%.2f sync_mode=%s",
-		h.regionLabel, tx.UserID, tx.TransactionID, tx.Amount, newTotal, h.dailyLimit, h.syncMode)
+	allowed := newTotal <= h.dailyLimit
+	log.Printf("[%s] risk: check_mode=%s sync_mode=%s user=%s tx=%s amount=%.2f prev_total=%.2f new_total=%.2f limit=%.2f allowed=%v",
+		h.regionLabel, h.checkMode, h.syncMode,
+		tx.UserID, tx.TransactionID, tx.Amount, prevTotal, newTotal, h.dailyLimit, allowed)
 
-	if newTotal > h.dailyLimit {
+	if !allowed {
 		breach := events.RiskBreach{
 			BreachID:       uuid.New().String(),
 			TransactionID:  tx.TransactionID,
@@ -130,52 +149,92 @@ func (h *Handler) Handle(ctx context.Context, body string) error {
 	return nil
 }
 
-// updateRisk atomically adds the transaction amount to the user's daily
-// cumulative spend in Redis and returns the new total. In dual-write mode
-// it also writes synchronously to the secondary Redis, failing the whole
-// operation if the secondary write fails (CP tradeoff).
-func (h *Handler) updateRisk(ctx context.Context, tx events.TransactionEvent) (float64, error) {
+// updateRisk updates the user's daily spend in Redis and returns (prevTotal, newTotal, error).
+// The update strategy depends on checkMode:
+//
+//   atomic     — INCRBYFLOAT in a single Redis round-trip; no race window.
+//   non-atomic — GET → sleep 10 ms → check → SET; deliberately racy so two
+//                concurrent requests can both read the same stale value, both
+//                pass the limit check, and both be written as allowed.
+//
+// In dual-write syncMode the chosen operation is also mirrored to the secondary.
+func (h *Handler) updateRisk(ctx context.Context, tx events.TransactionEvent) (prevTotal, newTotal float64, err error) {
 	key := fmt.Sprintf("risk:user:%s:daily", tx.UserID)
 
-	// --- Primary Redis write (always happens, in every mode) ---
-	primaryStart := time.Now()
-	newTotal, err := h.redis.IncrByFloat(ctx, key, tx.Amount).Result()
-	primaryLatency := time.Since(primaryStart)
-	if err != nil {
-		return 0, fmt.Errorf("redis INCRBYFLOAT (primary): %w", err)
+	if h.checkMode == CheckModeNonAtomic {
+		return h.updateRiskNonAtomic(ctx, tx, key)
 	}
-	log.Printf("[%s] risk: primary_redis_latency=%v", h.regionLabel, primaryLatency)
+	return h.updateRiskAtomic(ctx, tx, key)
+}
 
-	// Anchor TTL to the first write of the day (primary).
+// updateRiskAtomic uses INCRBYFLOAT — the increment and read are one atomic operation.
+func (h *Handler) updateRiskAtomic(ctx context.Context, tx events.TransactionEvent, key string) (prevTotal, newTotal float64, err error) {
+	primaryStart := time.Now()
+	newTotal, err = h.redis.IncrByFloat(ctx, key, tx.Amount).Result()
+	if err != nil {
+		return 0, 0, fmt.Errorf("redis INCRBYFLOAT (primary): %w", err)
+	}
+	log.Printf("[%s] risk: primary_redis_latency=%v", h.regionLabel, time.Since(primaryStart))
+
+	prevTotal = newTotal - tx.Amount
+
 	if newTotal == tx.Amount {
 		if err := h.redis.Expire(ctx, key, dailyKeyTTL).Err(); err != nil {
 			log.Printf("[%s] risk: failed to set TTL on primary key %s: %v", h.regionLabel, key, err)
 		}
 	}
 
-	// --- Secondary Redis write (dual-write mode only, SYNCHRONOUS) ---
-	// This is the CP leg: the handler does not return until the secondary
-	// acknowledges, so the user waits for cross-region replication. A failure
-	// here is fatal to the whole operation — the message stays on the queue
-	// and will be retried.
 	if h.syncMode == SyncModeDualWrite && h.redisSecondary != nil {
 		secondaryStart := time.Now()
 		secondaryTotal, err := h.redisSecondary.IncrByFloat(ctx, key, tx.Amount).Result()
-		secondaryLatency := time.Since(secondaryStart)
 		if err != nil {
-			return 0, fmt.Errorf("redis INCRBYFLOAT (secondary): %w", err)
+			return 0, 0, fmt.Errorf("redis INCRBYFLOAT (secondary): %w", err)
 		}
-		log.Printf("[%s] risk: secondary_redis_latency=%v", h.regionLabel, secondaryLatency)
-
+		log.Printf("[%s] risk: secondary_redis_latency=%v", h.regionLabel, time.Since(secondaryStart))
 		if secondaryTotal == tx.Amount {
 			if err := h.redisSecondary.Expire(ctx, key, dailyKeyTTL).Err(); err != nil {
-				log.Printf("[%s] risk: failed to set TTL on secondary key %s: %v",
-					h.regionLabel, key, err)
+				log.Printf("[%s] risk: failed to set TTL on secondary key %s: %v", h.regionLabel, key, err)
 			}
 		}
 	}
 
-	return newTotal, nil
+	return prevTotal, newTotal, nil
+}
+
+// updateRiskNonAtomic deliberately introduces a race window: GET the current
+// value, sleep 10 ms (widening the window for concurrent requests), then SET
+// the new total. Two goroutines can both read the same stale prevTotal, both
+// compute newTotal < dailyLimit, and both write — allowing spend past the limit.
+func (h *Handler) updateRiskNonAtomic(ctx context.Context, tx events.TransactionEvent, key string) (prevTotal, newTotal float64, err error) {
+	// Step 1: GET current value (may be stale if a concurrent request is in flight)
+	val, err := h.redis.Get(ctx, key).Result()
+	if err != nil && err != redis.Nil {
+		return 0, 0, fmt.Errorf("redis GET (non-atomic primary): %w", err)
+	}
+	if err == redis.Nil {
+		prevTotal = 0
+	} else {
+		if _, scanErr := fmt.Sscanf(val, "%f", &prevTotal); scanErr != nil {
+			return 0, 0, fmt.Errorf("redis GET parse error: %w", scanErr)
+		}
+	}
+
+	// Step 2: sleep to widen the race window
+	time.Sleep(10 * time.Millisecond)
+
+	// Step 3: compute new total and SET (no atomicity guarantee)
+	newTotal = prevTotal + tx.Amount
+	if err := h.redis.Set(ctx, key, fmt.Sprintf("%f", newTotal), dailyKeyTTL).Err(); err != nil {
+		return 0, 0, fmt.Errorf("redis SET (non-atomic primary): %w", err)
+	}
+
+	if h.syncMode == SyncModeDualWrite && h.redisSecondary != nil {
+		if err := h.redisSecondary.Set(ctx, key, fmt.Sprintf("%f", newTotal), dailyKeyTTL).Err(); err != nil {
+			return 0, 0, fmt.Errorf("redis SET (non-atomic secondary): %w", err)
+		}
+	}
+
+	return prevTotal, newTotal, nil
 }
 
 // blockTransaction marks the transaction as blocked in DynamoDB due to a risk limit breach.

@@ -3,8 +3,8 @@
 set -euo pipefail
 
 REGION="us-west-2"
-BUCKET="trading-risk-monitor-tfstate-dhyan"
-DYNAMO_TABLE="trading-risk-monitor-tfstate-lock-dhyan"
+BUCKET="trading-risk-monitor-tfstate"
+DYNAMO_TABLE="trading-risk-monitor-tfstate-lock"
 
 echo "==> Creating S3 state bucket: $BUCKET"
 if aws s3api head-bucket --bucket "$BUCKET" --region "$REGION" 2>/dev/null; then

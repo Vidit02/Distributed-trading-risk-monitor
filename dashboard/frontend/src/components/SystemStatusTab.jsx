@@ -22,6 +22,14 @@ function Box({ children, color, borderColor, style = {} }) {
   )
 }
 
+function LaneLabel({ children }) {
+  return (
+    <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>
+      {children}
+    </div>
+  )
+}
+
 function Arrow({ direction = 'down' }) {
   const symbols = { down: '↓', left: '↙', right: '↘', split2: '↙  ↘', split3: '↙ ↓ ↘' }
   return (
@@ -45,104 +53,119 @@ export default function SystemStatusTab({ services }) {
           System architecture
         </h2>
 
-        {/* Row 1: Ingress */}
-        <div className="flex justify-center gap-3 mb-1">
-          <Box color="#1a2e1a" borderColor="#22c55e" style={{ minWidth: 80 }}>ALB</Box>
-          <Box color="#1a2e1a" borderColor="#22c55e" style={{ minWidth: 160 }}>Transaction service</Box>
-        </div>
+        <div className="space-y-3">
 
-        <Arrow />
+          {/* Trader → ALB → Transaction */}
+          <div className="flex justify-center gap-4 items-center flex-wrap">
+            <Box color="#0f2027" borderColor="#64748b" style={{ minWidth: 80 }}>Trader</Box>
+            <div style={{ color: '#4a5568', fontSize: 13 }}>HTTP POST /transaction →</div>
+            <Box color="#0f2027" borderColor="#64748b" style={{ minWidth: 100 }}>ALB</Box>
+            <div style={{ color: '#4a5568', fontSize: 13 }}>→</div>
+            <Box color="#133023" borderColor="#22c55e" style={{ minWidth: 160 }}>Transaction Service</Box>
+          </div>
 
-        {/* Row 2: transaction-events SNS */}
-        <div className="flex justify-center mb-1">
-          <Box borderColor="#3b82f6" style={{ minWidth: 220 }}>SNS: transaction-events</Box>
-        </div>
-
-        <Arrow direction="split2" />
-
-        {/* Row 3: two main queues */}
-        <div className="flex justify-center gap-12 mb-1">
-          <Box color="#2a1a1a" borderColor="#ef4444" style={{ minWidth: 160 }}>High-priority SQS</Box>
-          <Box color="#1a1a2e" borderColor="#3b82f6" style={{ minWidth: 160 }}>Low-priority SQS</Box>
-        </div>
-
-        {/* Row 4: consumers of the two main queues */}
-        <div className="flex justify-center gap-12 mb-1">
-          {/* High priority consumers */}
-          <div className="flex flex-col items-center gap-1" style={{ minWidth: 160 }}>
-            <Arrow />
-            <div className="flex flex-col gap-1 w-full">
-              <Box color="#2a1a1a" borderColor="#ef4444">Fraud detection</Box>
-              <Box color="#2a1a1a" borderColor="#ef4444">Risk monitor</Box>
-              <Box color="#2a1a1a" borderColor="#ef4444">Compliance</Box>
+          {/* Transaction writes */}
+          <div className="flex justify-center gap-8 flex-wrap">
+            <div className="flex flex-col items-center gap-1">
+              <div style={{ color: '#4a5568', fontSize: 11 }}>write</div>
+              <Arrow />
+              <Box color="#1a2340" borderColor="#6366f1" style={{ minWidth: 130 }}>DynamoDB</Box>
+            </div>
+            <div className="flex flex-col items-center gap-1">
+              <div style={{ color: '#4a5568', fontSize: 11 }}>publish</div>
+              <Arrow />
+              <Box borderColor="#3b82f6" style={{ minWidth: 200 }}>SNS: transaction-events</Box>
             </div>
           </div>
 
-          {/* Low priority consumers */}
-          <div className="flex flex-col items-center gap-1" style={{ minWidth: 160 }}>
-            <Arrow />
-            <div className="flex flex-col gap-1 w-full">
-              <Box color="#1a1a2e" borderColor="#3b82f6">Analytics</Box>
-              <Box color="#1a1a2e" borderColor="#3b82f6">Audit logging</Box>
+          {/* SNS fan-out label */}
+          <div className="flex justify-center">
+            <LaneLabel>fan-out → 5 queues (high/critical filter on fraud · risk · compliance)</LaneLabel>
+          </div>
+
+          {/* 5 queues + services */}
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
+            {[
+              { key: 'fraud',      label: 'fraud-queue',        color: '#3b1d1d', border: '#ef4444', service: 'Fraud Svc',        filter: 'high/critical' },
+              { key: 'risk',       label: 'risk-queue',         color: '#3b1d1d', border: '#ef4444', service: 'Risk Svc',         filter: 'high/critical' },
+              { key: 'compliance', label: 'compliance-queue',   color: '#3b1d1d', border: '#ef4444', service: 'Compliance Svc',   filter: 'high/critical' },
+              { key: 'analytics',  label: 'analytics-queue',    color: '#1a2340', border: '#3b82f6', service: 'Analytics Svc',    filter: 'all' },
+              { key: 'audit',      label: 'audit-logging-queue',color: '#1a2340', border: '#3b82f6', service: 'Audit Logging Svc',filter: 'all' },
+            ].map(col => (
+              <div key={col.key} className="flex flex-col items-center gap-1">
+                <LaneLabel>{col.filter}</LaneLabel>
+                <Arrow />
+                <Box color={col.color} borderColor={col.border} style={{ minWidth: 140, fontSize: 11 }}>{col.label}</Box>
+                <Arrow />
+                <Box color={col.color} borderColor={col.border} style={{ minWidth: 140, fontSize: 11 }}>{col.service}</Box>
+              </div>
+            ))}
+          </div>
+
+          {/* Service outputs */}
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
+            <div className="flex flex-col items-center gap-1">
+              <Arrow />
+              <LaneLabel>if detected</LaneLabel>
+              <Box color="#2a1a1a" borderColor="#f97316" style={{ minWidth: 140, fontSize: 11 }}>SNS: fraud-alert-events</Box>
+            </div>
+            <div className="flex flex-col items-center gap-1">
+              <Arrow />
+              <LaneLabel>if breach</LaneLabel>
+              <Box color="#2a1a1a" borderColor="#f97316" style={{ minWidth: 140, fontSize: 11 }}>SNS: risk-breach-events</Box>
+              <div style={{ color: '#4a5568', fontSize: 10, marginTop: 4 }}>+ Redis INCRBYFLOAT</div>
+              <Box color="#1a2340" borderColor="#8b5cf6" style={{ minWidth: 140, fontSize: 10 }}>Redis Primary (us-west-2)</Box>
+              <div style={{ color: '#4a5568', fontSize: 10 }}>dual-write ↓</div>
+              <Box color="#1a2340" borderColor="#8b5cf6" style={{ minWidth: 140, fontSize: 10 }}>Redis Replica (us-east-1)</Box>
+            </div>
+            <div className="flex flex-col items-center gap-1">
+              <Arrow />
+              <LaneLabel>violation</LaneLabel>
+              <Box color="#2a1a1a" borderColor="#f97316" style={{ minWidth: 140, fontSize: 11 }}>SNS: compliance-events</Box>
+            </div>
+            <div className="flex flex-col items-center gap-1">
+              <div style={{ height: 20 }} />
+              <LaneLabel>reporting only</LaneLabel>
+            </div>
+            <div className="flex flex-col items-center gap-1">
+              <Arrow />
+              <Box color="#1b243f" borderColor="#3b82f6" style={{ minWidth: 140, fontSize: 11 }}>S3 (audit logs)</Box>
             </div>
           </div>
-        </div>
 
-        {/* Row 5: fraud + risk publish alert SNS topics */}
-        <div className="flex justify-center mb-1 mt-2">
-          <div style={{ textAlign: 'center', color: '#4a5568', fontSize: 12, fontStyle: 'italic' }}>
-            fraud &amp; risk publish alerts
+          {/* Alert fan-in */}
+          <div className="flex justify-center gap-4 items-center flex-wrap">
+            <Box color="#2a1a1a" borderColor="#f97316" style={{ minWidth: 140, fontSize: 11 }}>SNS: fraud-alert-events</Box>
+            <div style={{ color: '#4a5568', fontSize: 13 }}>+</div>
+            <Box color="#2a1a1a" borderColor="#f97316" style={{ minWidth: 140, fontSize: 11 }}>SNS: risk-breach-events</Box>
+            <div style={{ color: '#4a5568', fontSize: 13 }}>→</div>
+            <Box color="#2a1f0a" borderColor="#f59e0b" style={{ minWidth: 110, fontSize: 11 }}>Alert Queue</Box>
+            <div style={{ color: '#4a5568', fontSize: 13 }}>→</div>
+            <Box color="#2a1f0a" borderColor="#f59e0b" style={{ minWidth: 100, fontSize: 11 }}>Alert Svc</Box>
           </div>
-        </div>
 
-        <Arrow />
+          {/* DLQs */}
+          <div style={{ borderTop: `1px solid ${BORDER}`, paddingTop: 12 }}>
+            <LaneLabel>Dead Letter Queues — after 3 retries (5 for analytics/audit)</LaneLabel>
+          </div>
+          <div className="grid grid-cols-1 gap-2 lg:grid-cols-5">
+            {[
+              { name: 'Fraud DLQ',      retries: '3' },
+              { name: 'Risk DLQ',       retries: '3' },
+              { name: 'Compliance DLQ', retries: '3' },
+              { name: 'Analytics DLQ',  retries: '5' },
+              { name: 'Audit DLQ',      retries: '5' },
+            ].map(q => (
+              <div key={q.name} className="flex flex-col items-center gap-1">
+                <Arrow />
+                <Box color="#3b1d1d" borderColor="#dc2626" style={{ minWidth: 130, fontSize: 11 }}>{q.name}</Box>
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-center">
+            <Box color="#3b1d1d" borderColor="#dc2626" style={{ minWidth: 200 }}>Manual Review Svc (all 5 DLQs)</Box>
+          </div>
 
-        {/* Row 6: alert SNS topics */}
-        <div className="flex justify-center gap-3 mb-1">
-          <Box borderColor="#f59e0b" style={{ minWidth: 200 }}>SNS: fraud-alert-events</Box>
-          <Box borderColor="#f59e0b" style={{ minWidth: 200 }}>SNS: risk-breach-events</Box>
-        </div>
-
-        <Arrow />
-
-        {/* Row 7: alert SQS */}
-        <div className="flex justify-center mb-1">
-          <Box color="#2a1f0a" borderColor="#f59e0b" style={{ minWidth: 160 }}>Alert SQS</Box>
-        </div>
-
-        <Arrow />
-
-        {/* Row 8: alert service */}
-        <div className="flex justify-center mb-1">
-          <Box color="#2a1f0a" borderColor="#f59e0b" style={{ minWidth: 160 }}>Alert service</Box>
-        </div>
-
-        <div style={{ textAlign: 'center', color: '#4a5568', fontSize: 12, fontStyle: 'italic', margin: '2px 0' }}>
-          failed messages → DLQ
-        </div>
-
-        <Arrow />
-
-        {/* Row 9: High-priority DLQ → Manual review */}
-        <div className="flex justify-center gap-3 mb-1">
-          <Box color="#2a1a1a" borderColor="#dc2626" style={{ minWidth: 160 }}>High-priority DLQ</Box>
-        </div>
-
-        <Arrow />
-
-        <div className="flex justify-center mb-1">
-          <Box color="#2a1a1a" borderColor="#dc2626" style={{ minWidth: 160 }}>Manual review</Box>
-        </div>
-
-        <Arrow />
-
-        {/* Row 10: Data stores */}
-        <div className="flex justify-center gap-2 flex-wrap mt-1">
-          {['DynamoDB', 'Redis', 'S3', 'CloudWatch'].map(name => (
-            <Box key={name} color="#1f2210" borderColor="#84cc16" style={{ minWidth: 90 }}>
-              {name}
-            </Box>
-          ))}
         </div>
       </div>
 

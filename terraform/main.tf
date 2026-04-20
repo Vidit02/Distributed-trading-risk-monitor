@@ -206,6 +206,10 @@ module "ecs_services" {
   audit_logging_queue_url = module.sqs.audit_logging_queue_url
   alert_queue_url         = module.sqs.alert_queue_url
   fraud_dlq_url           = module.sqs.fraud_dlq_url
+  risk_dlq_url            = module.sqs.risk_dlq_url
+  compliance_dlq_url      = module.sqs.compliance_dlq_url
+  analytics_dlq_url       = module.sqs.analytics_dlq_url
+  audit_logging_dlq_url   = module.sqs.audit_logging_dlq_url
 
   # DynamoDB
   dynamodb_table_name = module.dynamodb.transactions_table_name

@@ -149,6 +149,26 @@ variable "fraud_dlq_url" {
   type        = string
 }
 
+variable "risk_dlq_url" {
+  description = "URL of the risk service DLQ (consumed by manual-review)"
+  type        = string
+}
+
+variable "compliance_dlq_url" {
+  description = "URL of the compliance service DLQ (consumed by manual-review)"
+  type        = string
+}
+
+variable "analytics_dlq_url" {
+  description = "URL of the analytics service DLQ (consumed by manual-review)"
+  type        = string
+}
+
+variable "audit_logging_dlq_url" {
+  description = "URL of the audit-logging service DLQ (consumed by manual-review)"
+  type        = string
+}
+
 # DynamoDB
 variable "dynamodb_table_name" {
   description = "Name of the transactions DynamoDB table"
@@ -194,4 +214,10 @@ variable "redis_region_label" {
   description = "Region label included in all log messages for filtering"
   type        = string
   default     = "us-west-2"
+}
+
+variable "risk_check_mode" {
+  description = "Risk check mode: atomic (INCRBYFLOAT) or non-atomic (GET/SET race)"
+  type        = string
+  default     = "atomic"
 }

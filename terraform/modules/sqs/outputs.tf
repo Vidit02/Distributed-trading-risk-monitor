@@ -67,9 +67,19 @@ output "fraud_dlq_arn" {
   value       = aws_sqs_queue.service_dlq["fraud"].arn
 }
 
+output "risk_dlq_url" {
+  description = "URL of the risk service DLQ"
+  value       = aws_sqs_queue.service_dlq["risk"].id
+}
+
 output "risk_dlq_arn" {
   description = "ARN of the risk service DLQ"
   value       = aws_sqs_queue.service_dlq["risk"].arn
+}
+
+output "compliance_dlq_url" {
+  description = "URL of the compliance service DLQ"
+  value       = aws_sqs_queue.service_dlq["compliance"].id
 }
 
 output "compliance_dlq_arn" {
@@ -77,9 +87,19 @@ output "compliance_dlq_arn" {
   value       = aws_sqs_queue.service_dlq["compliance"].arn
 }
 
+output "analytics_dlq_url" {
+  description = "URL of the analytics service DLQ"
+  value       = aws_sqs_queue.service_dlq["analytics"].id
+}
+
 output "analytics_dlq_arn" {
   description = "ARN of the analytics service DLQ"
   value       = aws_sqs_queue.service_dlq["analytics"].arn
+}
+
+output "audit_logging_dlq_url" {
+  description = "URL of the audit-logging service DLQ"
+  value       = aws_sqs_queue.service_dlq["audit-logging"].id
 }
 
 output "audit_logging_dlq_arn" {
