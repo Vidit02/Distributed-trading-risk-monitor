@@ -34,6 +34,11 @@ func main() {
 	syncMode := handler.SyncMode(envOr("REDIS_SYNC_MODE", string(handler.SyncModeSingle)))
 	regionLabel := envOr("REDIS_REGION_LABEL", "default")
 
+	// Check mode controls atomicity of the daily-limit read-increment-check.
+	//   "atomic"     → INCRBYFLOAT (default): single-operation, no race window.
+	//   "non-atomic" → GET → sleep 10 ms → SET: deliberate race for demo/testing.
+	checkMode := handler.CheckMode(envOr("RISK_CHECK_MODE", string(handler.CheckModeAtomic)))
+
 	dailyLimit := 50_000.0
 	if v := os.Getenv("DAILY_LIMIT"); v != "" {
 		parsed, err := strconv.ParseFloat(v, 64)
@@ -79,6 +84,7 @@ func main() {
 		dynamoTableName,
 		dailyLimit,
 		syncMode,
+		checkMode,
 		regionLabel,
 	)
 
@@ -86,8 +92,8 @@ func main() {
 		QueueURL: queueURL,
 	}, h.Handle)
 
-	log.Printf("Starting risk monitor service (daily_limit=%.2f sync_mode=%s region_label=%s)...",
-		dailyLimit, syncMode, regionLabel)
+	log.Printf("Starting risk monitor service (daily_limit=%.2f sync_mode=%s check_mode=%s region_label=%s)...",
+		dailyLimit, syncMode, checkMode, regionLabel)
 	if err := consumer.Start(ctx); err != nil {
 		log.Fatalf("consumer error: %v", err)
 	}

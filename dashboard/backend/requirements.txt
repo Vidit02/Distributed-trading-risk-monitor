@@ -2,3 +2,6 @@ fastapi
 uvicorn[standard]
 boto3
 python-dotenv
+openpyxl
+python-multipart
+requests

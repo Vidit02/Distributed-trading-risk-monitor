@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -113,7 +114,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		item["merchant_id"] = &dynamodbTypes.AttributeValueMemberS{Value: event.MerchantID}
 	}
 
-	if _, err := h.dynamo.PutItem(r.Context(), &dynamodb.PutItemInput{
+	if _, err := h.dynamo.PutItem(context.WithoutCancel(r.Context()), &dynamodb.PutItemInput{
 		TableName: aws.String(h.tableName),
 		Item:      item,
 	}); err != nil {
@@ -128,7 +129,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = h.sns.Publish(r.Context(), &sns.PublishInput{
+	_, err = h.sns.Publish(context.WithoutCancel(r.Context()), &sns.PublishInput{
 		TopicArn: aws.String(h.topicARN),
 		Message:  aws.String(string(payload)),
 		MessageAttributes: map[string]snsTypes.MessageAttributeValue{

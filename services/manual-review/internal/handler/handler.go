@@ -85,7 +85,7 @@ func (h *Handler) flagForReview(ctx context.Context, tx events.TransactionEvent)
 		},
 		ExpressionAttributeValues: map[string]dynamodbTypes.AttributeValue{
 			":status":    &dynamodbTypes.AttributeValueMemberS{Value: "pending_manual_review"},
-			":reason":    &dynamodbTypes.AttributeValueMemberS{Value: "fraud detection service was unavailable — automatic checks were not completed"},
+			":reason":    &dynamodbTypes.AttributeValueMemberS{Value: "service was unavailable — automatic checks were not completed, requires manual review"},
 			":flagged_at": &dynamodbTypes.AttributeValueMemberS{Value: time.Now().UTC().Format(time.RFC3339)},
 		},
 	})
@@ -117,7 +117,7 @@ func (h *Handler) storeUnparseable(ctx context.Context, body string) error {
 func (h *Handler) notifyReviewNeeded(ctx context.Context, tx events.TransactionEvent) error {
 	msg := fmt.Sprintf(
 		"Manual review required — tx=%s user=%s amount=%.2f %s. "+
-			"Fraud detection was unavailable; automatic checks were skipped.",
+			"Automatic checks were skipped; manual review required.",
 		tx.TransactionID, tx.UserID, tx.Amount, tx.Currency,
 	)
 

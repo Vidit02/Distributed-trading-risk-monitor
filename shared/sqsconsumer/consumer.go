@@ -86,6 +86,8 @@ func (c *Consumer) poll(ctx context.Context) error {
 func (c *Consumer) process(ctx context.Context, msg types.Message) {
 	body := aws.ToString(msg.Body)
 
+	log.Printf("sqsconsumer: received msg_id=%s queue=%s", aws.ToString(msg.MessageId), c.queueURL)
+
 	// SNS wraps the real payload in an envelope when delivering to SQS.
 	if unwrapped, err := unwrapSNS(body); err == nil {
 		body = unwrapped

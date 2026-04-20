@@ -1,11 +1,19 @@
+import csv
+import io
+import json
 import os
+import time
+import uuid
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 
 import boto3
+import openpyxl
+import requests as http_requests
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 load_dotenv()
 
@@ -15,15 +23,26 @@ load_dotenv()
 _ACCOUNT = "265898753907"
 _SQS_BASE = f"https://sqs.us-west-2.amazonaws.com/{_ACCOUNT}"
 
-CLUSTER_NAME            = os.getenv("CLUSTER_NAME",            "trading-risk-monitor-cluster")
-HIGH_PRIORITY_QUEUE_URL = os.getenv("HIGH_PRIORITY_QUEUE_URL", f"{_SQS_BASE}/trading-risk-monitor-high-priority")
-LOW_PRIORITY_QUEUE_URL  = os.getenv("LOW_PRIORITY_QUEUE_URL",  f"{_SQS_BASE}/trading-risk-monitor-low-priority")
-HIGH_PRIORITY_DLQ_URL   = os.getenv("HIGH_PRIORITY_DLQ_URL",   f"{_SQS_BASE}/trading-risk-monitor-high-priority-dlq")
-LOW_PRIORITY_DLQ_URL    = os.getenv("LOW_PRIORITY_DLQ_URL",    f"{_SQS_BASE}/trading-risk-monitor-low-priority-dlq")
-ALERT_QUEUE_URL         = os.getenv("ALERT_QUEUE_URL",         f"{_SQS_BASE}/trading-risk-monitor-alert")
-ALERT_DLQ_URL           = os.getenv("ALERT_DLQ_URL",           f"{_SQS_BASE}/trading-risk-monitor-alert-dlq")
-AWS_REGION              = os.getenv("AWS_REGION",              "us-west-2")
-DYNAMODB_TABLE_NAME     = os.getenv("DYNAMODB_TABLE_NAME",     "trading-risk-monitor-transactions")
+ALB_URL             = os.getenv("ALB_URL",             "http://localhost:8080")
+CLUSTER_NAME        = os.getenv("CLUSTER_NAME",        "trading-risk-monitor-cluster")
+AWS_REGION          = os.getenv("AWS_REGION",          "us-west-2")
+DYNAMODB_TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME", "trading-risk-monitor-transactions")
+
+# Per-service queues (SNS fan-out architecture)
+_B = f"{_SQS_BASE}/trading-risk-monitor"
+HIGH_QUEUE_URLS = [f"{_B}-fraud",     f"{_B}-risk",          f"{_B}-compliance"]
+LOW_QUEUE_URLS  = [f"{_B}-analytics", f"{_B}-audit-logging"]
+ALERT_QUEUE_URL = f"{_B}-alert"
+
+HIGH_DLQ_URLS   = [f"{_B}-fraud-dlq",     f"{_B}-risk-dlq",          f"{_B}-compliance-dlq"]
+LOW_DLQ_URLS    = [f"{_B}-analytics-dlq", f"{_B}-audit-logging-dlq"]
+ALERT_DLQ_URL   = f"{_B}-alert-dlq"
+
+# Keep these for backwards-compat references in helper functions
+HIGH_PRIORITY_QUEUE_URL = HIGH_QUEUE_URLS[0]
+LOW_PRIORITY_QUEUE_URL  = LOW_QUEUE_URLS[0]
+HIGH_PRIORITY_DLQ_URL   = HIGH_DLQ_URLS[0]
+LOW_PRIORITY_DLQ_URL    = LOW_DLQ_URLS[0]
 
 # ---------------------------------------------------------------------------
 # FastAPI app
@@ -65,6 +84,7 @@ SERVICES = [
 # ---------------------------------------------------------------------------
 delays: dict[str, int] = {}        # service name → delay ms (0 = no delay)
 events: list[dict] = []            # chaos event log, newest first, max 20
+upload_sessions: dict[str, list[dict]] = {}   # session_id → parsed rows
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -79,7 +99,7 @@ def add_event(message: str) -> None:
 
 
 def get_dlq_depth(url: str) -> int:
-    """Return the approximate number of messages in a DLQ. Returns 0 on error."""
+    """Return the approximate number of messages in a single queue. Returns 0 on error."""
     if not url:
         return 0
     try:
@@ -90,6 +110,10 @@ def get_dlq_depth(url: str) -> int:
         return int(resp["Attributes"].get("ApproximateNumberOfMessages", 0))
     except Exception:
         return 0
+
+def get_queue_depth_sum(urls: list[str]) -> int:
+    """Sum approximate message counts across multiple queues."""
+    return sum(get_dlq_depth(u) for u in urls)
 
 
 def _service_by_name(name: str) -> dict:
@@ -151,11 +175,11 @@ def get_status():
             "delay_ms":     delay_ms,
         })
 
-    high_dlq_depth    = get_dlq_depth(HIGH_PRIORITY_DLQ_URL)
-    low_dlq_depth     = get_dlq_depth(LOW_PRIORITY_DLQ_URL)
-    high_queue_depth  = get_dlq_depth(HIGH_PRIORITY_QUEUE_URL)
-    low_queue_depth   = get_dlq_depth(LOW_PRIORITY_QUEUE_URL)
+    high_queue_depth  = get_queue_depth_sum(HIGH_QUEUE_URLS)
+    low_queue_depth   = get_queue_depth_sum(LOW_QUEUE_URLS)
     alert_queue_depth = get_dlq_depth(ALERT_QUEUE_URL)
+    high_dlq_depth    = get_queue_depth_sum(HIGH_DLQ_URLS)
+    low_dlq_depth     = get_queue_depth_sum(LOW_DLQ_URLS)
     alert_dlq_depth   = get_dlq_depth(ALERT_DLQ_URL)
 
     return {
@@ -237,7 +261,7 @@ def get_transactions(priority: str = None, type: str = None, limit: int = 100):
             filter_parts.append("transaction_type = :type")
             expr_values[":type"] = type
 
-        kwargs = {"Limit": limit}
+        kwargs = {}
         if filter_parts:
             kwargs["FilterExpression"] = " AND ".join(filter_parts)
         if expr_names:
@@ -245,8 +269,15 @@ def get_transactions(priority: str = None, type: str = None, limit: int = 100):
         if expr_values:
             kwargs["ExpressionAttributeValues"] = expr_values
 
-        resp = transactions_table.scan(**kwargs)
-        items = resp.get("Items", [])
+        items = []
+        while True:
+            resp = transactions_table.scan(**kwargs)
+            items.extend(resp.get("Items", []))
+            last = resp.get("LastEvaluatedKey")
+            if not last or len(items) >= limit:
+                break
+            kwargs["ExclusiveStartKey"] = last
+        items = items[:limit]
 
         # Sort newest first by timestamp
         items.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
@@ -281,12 +312,19 @@ def get_transactions(priority: str = None, type: str = None, limit: int = 100):
 def get_metrics():
     """Return real observability metrics from DynamoDB and SQS."""
     try:
-        # Scan all transactions (DynamoDB)
-        resp = transactions_table.scan(
-            ProjectionExpression="#ts, #st, transaction_type",
-            ExpressionAttributeNames={"#ts": "timestamp", "#st": "status"},
-        )
-        items = resp.get("Items", [])
+        # Paginate through the full table (DynamoDB returns max 1 MB per call)
+        scan_kwargs = {
+            "ProjectionExpression": "#ts, #st, transaction_type",
+            "ExpressionAttributeNames": {"#ts": "timestamp", "#st": "status"},
+        }
+        items = []
+        while True:
+            resp = transactions_table.scan(**scan_kwargs)
+            items.extend(resp.get("Items", []))
+            last = resp.get("LastEvaluatedKey")
+            if not last:
+                break
+            scan_kwargs["ExclusiveStartKey"] = last
 
         # Transactions/min — count items with timestamp in last 60s
         now = datetime.now(timezone.utc)
@@ -306,9 +344,9 @@ def get_metrics():
 
         error_rate = round((flagged / total * 100), 2) if total > 0 else 0.0
 
-        # Current queue depths from SQS
-        high_depth  = get_dlq_depth(HIGH_PRIORITY_QUEUE_URL)
-        low_depth   = get_dlq_depth(LOW_PRIORITY_QUEUE_URL)
+        # Current queue depths from SQS — summed across per-service queues
+        high_depth  = get_queue_depth_sum(HIGH_QUEUE_URLS)
+        low_depth   = get_queue_depth_sum(LOW_QUEUE_URLS)
         alert_depth = get_dlq_depth(ALERT_QUEUE_URL)
 
         return {
@@ -323,3 +361,175 @@ def get_metrics():
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Batch upload helpers
+# ---------------------------------------------------------------------------
+
+_COL_ALIASES = {
+    "userid": "user_id", "user": "user_id",
+    "amount": "amount", "price": "amount", "value": "amount",
+    "currency": "currency", "curr": "currency", "ccy": "currency",
+    "merchantid": "merchant_id", "merchant": "merchant_id",
+    "transactiontype": "transaction_type", "txtype": "transaction_type",
+    "type": "transaction_type", "kind": "transaction_type",
+    "priority": "priority",
+}
+
+def _norm(k: str) -> str:
+    return k.lower().replace(" ", "").replace("_", "").replace("-", "")
+
+def _map_row(raw: dict) -> dict:
+    return {_COL_ALIASES[_norm(k)]: str(v) for k, v in raw.items() if _COL_ALIASES.get(_norm(k))}
+
+def _parse_excel(data: bytes) -> list[dict]:
+    wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return []
+    headers = [str(c).strip() if c is not None else "" for c in rows[0]]
+    result = []
+    for row in rows[1:]:
+        raw = {headers[i]: (row[i] if row[i] is not None else "") for i in range(len(headers))}
+        mapped = _map_row(raw)
+        if mapped.get("user_id") and mapped.get("amount"):
+            result.append(mapped)
+    return result
+
+def _parse_csv_file(data: bytes) -> list[dict]:
+    text = data.decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(text))
+    result = []
+    for raw in reader:
+        mapped = _map_row(raw)
+        if mapped.get("user_id") and mapped.get("amount"):
+            result.append(mapped)
+    return result
+
+def _derive_priority(amount: float) -> str:
+    if amount >= 50000: return "critical"
+    if amount >= 10000: return "high"
+    if amount >= 1000:  return "medium"
+    return "low"
+
+
+# ---------------------------------------------------------------------------
+# POST /api/upload — parse file, store session, return preview
+# ---------------------------------------------------------------------------
+
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...)):
+    data = await file.read()
+    filename = (file.filename or "").lower()
+
+    try:
+        if filename.endswith(".csv"):
+            rows = _parse_csv_file(data)
+        elif filename.endswith((".xlsx", ".xls")):
+            rows = _parse_excel(data)
+        else:
+            raise HTTPException(status_code=400, detail="Only .xlsx, .xls, or .csv files are accepted")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Failed to parse file: {exc}")
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="No valid rows found. Required columns: user_id, amount, currency, merchant_id, transaction_type")
+
+    session_id = str(uuid.uuid4())
+    upload_sessions[session_id] = rows
+
+    preview = []
+    for r in rows[:10]:
+        amt = float(r.get("amount", 0) or 0)
+        preview.append({
+            "user_id":          r.get("user_id", ""),
+            "amount":           amt,
+            "currency":         r.get("currency", "USD"),
+            "merchant_id":      r.get("merchant_id", ""),
+            "transaction_type": r.get("transaction_type", "purchase"),
+            "priority":         r.get("priority") or _derive_priority(amt),
+        })
+
+    return {"session_id": session_id, "count": len(rows), "preview": preview}
+
+
+# ---------------------------------------------------------------------------
+# GET /api/batch-submit/{session_id} — SSE stream that submits all rows
+# ---------------------------------------------------------------------------
+
+@app.get("/api/batch-submit/{session_id}")
+def batch_submit(session_id: str):
+    rows = upload_sessions.get(session_id)
+    if rows is None:
+        raise HTTPException(status_code=404, detail="Session not found. Re-upload the file.")
+
+    total = len(rows)
+
+    def send_one(row: dict) -> dict:
+        amt = float(row.get("amount", 0) or 0)
+        payload = {
+            "user_id":          row.get("user_id", ""),
+            "amount":           amt,
+            "currency":         (row.get("currency") or "USD").upper(),
+            "merchant_id":      row.get("merchant_id", "unknown"),
+            "transaction_type": (row.get("transaction_type") or "purchase").lower(),
+        }
+        pri = row.get("priority")
+        if pri:
+            payload["priority"] = pri.lower()
+        try:
+            resp = http_requests.post(
+                f"{ALB_URL}/transaction",
+                json=payload,
+                timeout=10,
+            )
+            if resp.status_code == 202:
+                body = resp.json()
+                return {"ok": True, "transaction_id": body.get("transaction_id", ""), "status": 202}
+            return {"ok": False, "transaction_id": "", "status": resp.status_code, "error": resp.text[:120]}
+        except Exception as exc:
+            return {"ok": False, "transaction_id": "", "status": 0, "error": str(exc)[:120]}
+
+    def generate():
+        success = 0
+        failed = 0
+        start = time.time()
+
+        yield f"data: {json.dumps({'type': 'start', 'total': total})}\n\n"
+
+        for i, row in enumerate(rows):
+            result = send_one(row)
+            if result["ok"]:
+                success += 1
+            else:
+                failed += 1
+
+            elapsed = time.time() - start
+            tps = (i + 1) / elapsed if elapsed > 0 else 0
+
+            event = {
+                "type":           "progress",
+                "index":          i,
+                "total":          total,
+                "success":        success,
+                "failed":         failed,
+                "tps":            round(tps, 1),
+                "transaction_id": result.get("transaction_id", ""),
+                "ok":             result["ok"],
+                "status":         result.get("status", 0),
+                "user_id":        row.get("user_id", ""),
+                "amount":         float(row.get("amount", 0) or 0),
+                "error":          result.get("error", ""),
+            }
+            yield f"data: {json.dumps(event)}\n\n"
+
+        elapsed = time.time() - start
+        yield f"data: {json.dumps({'type': 'done', 'total': total, 'success': success, 'failed': failed, 'elapsed': round(elapsed, 1)})}\n\n"
+        upload_sessions.pop(session_id, None)
+
+    return StreamingResponse(generate(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
